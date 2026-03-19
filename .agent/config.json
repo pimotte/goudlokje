@@ -1,0 +1,6 @@
+{
+  "validation": {
+    "max_retries": 3,
+    "retry_prompt": "Validation failed. Please fix the issues."
+  }
+}
