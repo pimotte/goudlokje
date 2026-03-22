@@ -238,7 +238,21 @@ private def getOrBuildEnv
 
     If `envCache` is provided, the compiled environment for the file's imports
     is reused across files with identical import lists, avoiding redundant
-    `.olean` loading. -/
+    `.olean` loading.
+
+    **Why not use `Mathlib.TacticAnalysis`?**
+    Mathlib's tactic analysis framework (`Mathlib.Tactic.TacticAnalysis`) is
+    designed to hook into the Lean *linter* system: its `findTacticSeqs` and
+    `runTacticCode` utilities all run in `CommandElabM`, which is only available
+    *inside* the Lean compilation pipeline (i.e. during `lake build`).
+
+    Goudlokje is a **standalone batch binary** that elaborates student files
+    offline via `Frontend.FrontendM` in plain `IO`.  There is no
+    `CommandElabM` context available, so the Mathlib framework cannot be called
+    directly.  The helpers `collectTacticInfos` and `tryTacticAt` below
+    implement the same ideas (InfoTree traversal with context threading, and
+    goal-state replay via `MetaM`) at the `IO`/`MetaM` level, which is the
+    correct layer for a standalone tool. -/
 def analyzeFile
     (filePath : System.FilePath) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
