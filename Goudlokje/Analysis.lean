@@ -240,19 +240,52 @@ private def getOrBuildEnv
     is reused across files with identical import lists, avoiding redundant
     `.olean` loading.
 
-    **Why not use `Mathlib.TacticAnalysis`?**
-    Mathlib's tactic analysis framework (`Mathlib.Tactic.TacticAnalysis`) is
-    designed to hook into the Lean *linter* system: its `findTacticSeqs` and
-    `runTacticCode` utilities all run in `CommandElabM`, which is only available
-    *inside* the Lean compilation pipeline (i.e. during `lake build`).
+    **Attempted refactoring to use `Mathlib.TacticAnalysis` (and why it was abandoned)**
 
-    Goudlokje is a **standalone batch binary** that elaborates student files
-    offline via `Frontend.FrontendM` in plain `IO`.  There is no
-    `CommandElabM` context available, so the Mathlib framework cannot be called
-    directly.  The helpers `collectTacticInfos` and `tryTacticAt` below
-    implement the same ideas (InfoTree traversal with context threading, and
-    goal-state replay via `MetaM`) at the `IO`/`MetaM` level, which is the
-    correct layer for a standalone tool. -/
+    We attempted to replace the custom InfoTree traversal and tactic-replay
+    logic with Mathlib's `Mathlib.Tactic.TacticAnalysis` framework.  The
+    attempt revealed three independent reasons the framework cannot be used
+    here, even if this tool is run through `lake build`.
+
+    *1. Monad mismatch: `CommandElabM` vs `IO`.*
+    `Mathlib.TacticAnalysis.findTacticSeqs` and
+    `Lean.Elab.ContextInfo.runTacticCode` (the two primitives that would
+    replace `collectTacticInfos` and `tryTacticAt`) both live in
+    `CommandElabM = ReaderT Context $ StateRefT State $ EIO Exception`.
+    Goudlokje elaborates files from plain `IO` via `Frontend.FrontendM`.
+    Bridging the two requires (a) constructing a `Command.Context` with all
+    required fields (`snap?`, `cancelTk?`, …), (b) allocating an `IO.Ref`
+    for the command state, and (c) converting `EIO Lean.Exception` errors
+    back to `IO.Error`.  The resulting glue code is more complex than the
+    `MetaM`-level helpers it replaces, and it is fragile with respect to
+    future changes to `Command.Context`.
+
+    *2. Missing Verbose-wrapper filter.*
+    `findTacticSeqs` filters `tacticSeq`, `tacticSeq1Indented`, and
+    `byTactic` nodes, but it does **not** filter the Verbose proof-wrapper
+    tactics (`withoutSuggestions`, `Verbose.English.withSuggestions`,
+    `Verbose.French.withSuggestions`).  Without filtering these, a spurious
+    tactic node at the `Proof:` position (with a non-empty `goalsBefore`)
+    is included, causing false-positive shortcut reports.  We would have to
+    re-add `isSyntheticTacticContainer`-style filtering on top of the
+    Mathlib traversal, so the custom code would not be eliminated.
+
+    *3. Architectural incompatibility with the linter-based API.*
+    The high-level API (`tryAtEachStepFromStrings`, `@[tacticAnalysis]`,
+    `runPasses`) is a *linter* that fires on the file currently being
+    compiled by `lake build`.  Goudlokje analyses **external** worksheet
+    files that are not part of the Goudlokje project, so there is no
+    compilation unit in which to register the linter.  Furthermore, the
+    linter only emits messages; it cannot compare results against a
+    `.test.json` expected-shortcuts file or return a non-zero exit code
+    for CI, both of which are core requirements of Goudlokje's check mode.
+
+    **Conclusion**: The `MetaM`-level helpers `collectTacticInfos` and
+    `tryTacticAt` below implement the same ideas (InfoTree traversal with
+    context threading, goal-state replay) at the correct abstraction layer
+    for a standalone batch tool.  They are not reinventing the wheel so
+    much as operating one layer below the linter framework, which is the
+    only layer accessible from `IO`. -/
 def analyzeFile
     (filePath : System.FilePath) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
