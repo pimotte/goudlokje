@@ -4,6 +4,7 @@ import TestSuite.Shortcuts
 import TestSuite.Discovery
 import TestSuite.Analysis
 import TestSuite.Check
+import TestSuite.Update
 
 def main : IO UInt32 := do
   IO.println "=== Config tests ==="
@@ -23,6 +24,9 @@ def main : IO UInt32 := do
   IO.println ""
   IO.println "=== Check end-to-end tests ==="
   TestSuite.Check.runAll
+  IO.println ""
+  IO.println "=== Update end-to-end tests ==="
+  TestSuite.Update.runAll
   IO.println ""
   IO.println "All tests passed."
   return 0

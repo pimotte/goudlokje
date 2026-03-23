@@ -1,6 +1,7 @@
 import Cli
 import Goudlokje.Config
 import Goudlokje.Check
+import Goudlokje.Update
 
 open Cli
 
@@ -37,12 +38,37 @@ private def checkCmd : Cmd := `[Cli|
     ...files : String; "Lean files or directories to check (default: current directory)"
 ]
 
+private def runUpdate (p : Parsed) : IO UInt32 := do
+  let verbose   := p.hasFlag "verbose"
+  let debug     := p.hasFlag "debug" || verbose
+  let acceptAll := p.hasFlag "all"
+  let cfg ← loadConfig debug
+  let rawPaths := p.variableArgsAs! String
+  let paths : Array System.FilePath :=
+    if rawPaths.isEmpty then #[⟨"."⟩] else rawPaths.map (⟨·⟩)
+  Goudlokje.runUpdate paths cfg acceptAll debug verbose
+  return 0
+
+private def updateCmd : Cmd := `[Cli|
+  update VIA runUpdate;
+  "Record expected shortcuts into per-file .test.json files."
+
+  FLAGS:
+    all;     "Accept all shortcuts without prompting"
+    debug;   "Print debug information during analysis (probe counts, result statistics)"
+    verbose; "Print all debug information plus detailed per-file probe hits"
+
+  ARGS:
+    ...files : String; "Lean files or directories to update (default: current directory)"
+]
+
 private def goudlokjeCmd : Cmd := `[Cli|
   goudlokje NOOP;
   "Worksheet shortcut checker for Lean 4 exercises."
 
   SUBCOMMANDS:
-    checkCmd
+    checkCmd;
+    updateCmd
 ]
 
 def main (args : List String) : IO UInt32 :=
