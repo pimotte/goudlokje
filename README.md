@@ -26,6 +26,15 @@ require "goudlokje"
   from git "https://github.com/pimotte/goudlokje" @ "main"
 ```
 
+Or in your `lakefile.toml`:
+
+```toml
+[[require]]
+name = "goudlokje"
+git = "https://github.com/pimotte/goudlokje"
+rev = "main"
+```
+
 Then build the executable (Lake will fetch and compile Goudlokje automatically):
 
 ```bash

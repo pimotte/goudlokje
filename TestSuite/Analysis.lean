@@ -207,6 +207,22 @@ def testVerboseExerciseDoesNotProbeBeforeProof : IO Unit := do
       s!"testVerboseExerciseDoesNotProbeBeforeProof: expected 1 shortcut \
         (proof wrapper at Proof: must not be probed), got {results.size}")
 
+/-- Regression test: combined Verbose Lean proof wrapper (Exercise block) with full
+    Lean Verbose step syntax (`Let's first/now prove that …`) inside the proof body.
+
+    Both filters must cooperate:
+    - `isSyntheticTacticContainer` suppresses the `with(out)_suggestions` wrapper at `Proof:`
+    - `filterVerboseSteps` keeps only the first non-boundary tactic per step
+    - `skipLastPerDeclaration` drops the last overall position (step 2's `show`)
+    After all three, exactly 1 shortcut remains (step 1's `show`). -/
+def testVerboseExerciseWithStepsYieldsOneShortcut : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseExerciseWithSteps.lean"
+  let results ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
+  unless results.size == 1 do
+    throw (IO.userError
+      s!"testVerboseExerciseWithStepsYieldsOneShortcut: expected 1 shortcut \
+        (wrapper filtered, step 2 is last), got {results.size}")
+
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
   testNoTacticsNoResults;    IO.println "  ✓ testNoTacticsNoResults"
@@ -233,5 +249,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testVerboseExerciseWithStepsYieldsOneShortcut;
+                             IO.println "  ✓ testVerboseExerciseWithStepsYieldsOneShortcut"
 
 end TestSuite.Analysis
