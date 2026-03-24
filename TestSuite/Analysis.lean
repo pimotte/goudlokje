@@ -145,25 +145,30 @@ def testOnProbeCallbackIncludesFailures : IO Unit := do
     shortcuts in non-Verbose exercises. -/
 def testVerboseFilterRespectsDeclarationBoundaries : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseMultiDecl.lean"
-  -- Decl 2 (no step boundaries) has `constructor` at line 21.
-  -- Without filter: decide must be found at decl 2's `constructor` (line 40).
+  -- Decl 2 (no step boundaries) has `constructor` at line 40.
+  -- `all_goals norm_num` at line 41 generates two TacticInfo nodes at different columns;
+  -- skip-last drops only the inner `norm_num` (last position), leaving `all_goals@(41,2)`.
+  -- Without filter: lines 29,30,32 (Decl 1) + lines 40,41 (Decl 2, col 2 for all_goals) → 5 total.
   let withoutFilter ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := false)
   unless withoutFilter.any (fun r => r.line == 40) do
     throw (IO.userError
       "testVerboseFilterRespectsDeclarationBoundaries: fixture sanity check failed \
        — expected decide shortcut at line 40 (constructor, unfiltered)")
-  -- With filter: decl 2 has no step boundaries, so filterVerboseSteps must NOT suppress it.
-  -- (skip-last removes `all_goals norm_num` at line 41 but keeps `constructor` at line 40.)
+  unless withoutFilter.size == 5 do
+    throw (IO.userError
+      s!"testVerboseFilterRespectsDeclarationBoundaries: expected 5 shortcuts unfiltered \
+        (lines 29,30,32,40,41), got {withoutFilter.size}")
+  -- With filter: Decl 1→lines 29,32 (one per step); Decl 2 singletons→lines 40,41 → 4 total.
+  -- (filterVerboseSteps must NOT suppress Decl 2 which has no step boundaries.)
   let withFilter ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
   unless withFilter.any (fun r => r.line == 40) do
     throw (IO.userError
       "testVerboseFilterRespectsDeclarationBoundaries: filterVerboseSteps incorrectly \
        suppressed shortcuts in a declaration with no step boundaries (line 40)")
-  -- Sanity: filter still reduces the overall count (decl 1's step filtering works).
-  unless withFilter.size < withoutFilter.size do
+  unless withFilter.size == 4 do
     throw (IO.userError
-      s!"testVerboseFilterRespectsDeclarationBoundaries: expected filter to reduce overall \
-        count, got unfiltered={withoutFilter.size} filtered={withFilter.size}")
+      s!"testVerboseFilterRespectsDeclarationBoundaries: expected 4 shortcuts filtered \
+        (lines 29,32,40,41), got {withFilter.size}")
 
 /-- The number of successful onProbe callbacks equals the number of (deduplicated)
     probe results returned by analyzeFile. -/

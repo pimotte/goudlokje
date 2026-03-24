@@ -401,9 +401,13 @@ def analyzeFile
         else afterSkipLast.map (fun pair => #[pair])
       acc ++ groups) #[]
   -- Probe each step group.
-  -- For Verbose step groups (size > 1), stop at the first successful probe
-  -- (report the first shortcut in the step; skip the rest of the step).
-  -- For singleton groups (non-Verbose or no boundaries), report all shortcuts.
+  -- Tactics in each group are probed in source order until the first shortcut is found:
+  -- - If the first tactic in a group is shortcuttable, it is reported and the rest skipped.
+  -- - If the first tactic is NOT shortcuttable, probing continues through the remaining
+  --   tactics in the group until a shortcut is found (or the group is exhausted).
+  -- For singleton groups (non-Verbose or no step boundaries), this reduces to reporting
+  -- the shortcut if any; for multi-tactic Verbose step groups, at most one shortcut per
+  -- step is reported (the first one found).
   let mut results : Array ProbeResult := #[]
   for group in allGroups do
     let mut groupDone := false

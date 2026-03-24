@@ -2,20 +2,20 @@
 -- Purpose: verify that filterVerboseSteps per-step deduplication does not leak across
 -- declarations; Decl 2 (no step boundaries) must keep ALL its shortcuts.
 --
+-- NOTE: `all_goals norm_num` at line 41 creates two TacticInfo nodes at DIFFERENT columns:
+--   `all_goals`@(41,2): NOT last-position → probed → SHORTCUT (decide closes 1+1=2)
+--   `norm_num`@(41,11): IS  last-position of Decl 2 → dropped by skip-last
+--
 -- Shortcut summary with `decide` probe:
 --
---   filterVerboseSteps := false (probe all, no step grouping):
---     Decl 1: show@29, norm_num@30, show@32 probed (norm_num@33 is last → skip-last)  → 3 shortcuts
---     Decl 2: constructor@40 probed (all_goals@41 is last → skip-last)                → 1 shortcut
---     Total: 4 shortcuts
+--   filterVerboseSteps := false: show@29, norm_num@30, show@32 (Decl 1);
+--     constructor@40, all_goals@(41,2) (Decl 2); norm_num@33 + norm_num@(41,11) → skip-last
+--     Total: 5 shortcuts (lines 29, 30, 32, 40, 41)
 --
---   filterVerboseSteps := true (probe all per step, report first shortcut per step):
---     Decl 1, step 1 [show@29, norm_num@30]: show@29 → shortcut (decide closes 1+1=2) → 1 shortcut
---     Decl 1, step 2 [show@32]:              show@32 → shortcut (decide closes 2+2=4) → 1 shortcut
---       (norm_num@33 dropped by skip-last before grouping)
---     Decl 2, no boundaries, singleton groups: constructor@40 → shortcut              → 1 shortcut
---       (all_goals@41 dropped by skip-last)
---     Total: 3 shortcuts (at lines 29, 32, 40)
+--   filterVerboseSteps := true (first shortcut per step):
+--     Decl 1 step 1 [show@29,norm_num@30]: show@29 → shortcut; step 2 [show@32]: shortcut
+--     Decl 2 singletons: [constructor@40] → shortcut, [all_goals@(41,2)] → shortcut
+--     Total: 4 shortcuts (lines 29, 32, 40, 41)
 import Verbose.English.All
 
 set_option linter.unusedTactic false
@@ -33,9 +33,9 @@ example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
   norm_num                           -- line 33: last tactic of Decl 1 → dropped by skip-last before grouping
 
 -- Decl 2 (plain, no step boundaries): filterVerboseSteps must NOT suppress tactics here.
--- Each tactic becomes a singleton group → all shortcuts reported.
--- Skip-last drops all_goals@41 (last tactic of Decl 2).
--- Singleton group [constructor@40]: probe → shortcut (decide closes the full conjunction).
+-- Each tactic becomes a singleton group; all shortcuts reported.
+-- `all_goals norm_num` creates TWO nodes: all_goals@(41,2) probed (SHORTCUT); norm_num@(41,11) last → skip-last.
+-- Singletons: [constructor@40] → SHORTCUT (decide closes full conj), [all_goals@(41,2)] → SHORTCUT.
 example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
   constructor        -- line 40: SHORTCUT — `decide` closes the full conjunction goal
-  all_goals norm_num -- line 41: last tactic of Decl 2 → dropped by skip-last
+  all_goals norm_num -- line 41: all_goals@(41,2) → SHORTCUT; norm_num@(41,11) → last → skip-last
