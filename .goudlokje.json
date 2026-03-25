@@ -1,0 +1,3 @@
+{
+  "tactics": ["decide", "tauto", "omega", "norm_num", "simp", "ring"]
+}
