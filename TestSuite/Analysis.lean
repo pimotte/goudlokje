@@ -200,6 +200,31 @@ def testSkipLastTacticNotReported : IO Unit := do
       s!"testSkipLastTacticNotReported: expected exactly 1 shortcut (last step skipped), \
         got {results.size}")
 
+/-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
+    in a file using the WaterproofGenre `#doc` format. -/
+def testDetectsDecideShortcutInWaterproofFile : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/Waterproof.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.size ≥ 1 do
+    throw (IO.userError
+      s!"testWaterproof: expected ≥1 probe result, got {results.size}")
+  unless results.any (fun r => r.tactic == "decide") do
+    throw (IO.userError
+      "testWaterproof: expected tactic 'decide' in results")
+
+/-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
+    in a file using both WaterproofGenre `#doc` blocks and Lean Verbose tactics.
+    This combination is the typical usage in external Waterproof exercise projects. -/
+def testDetectsDecideShortcutInVerboseWaterproofFile : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproof.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.size ≥ 1 do
+    throw (IO.userError
+      s!"testVerboseWaterproof: expected ≥1 probe result, got {results.size}")
+  unless results.any (fun r => r.tactic == "decide") do
+    throw (IO.userError
+      "testVerboseWaterproof: expected tactic 'decide' in results")
+
 /-- Regression test: the `Exercise`/`Example` Verbose command wraps the `Proof:` body
     in `with(out)_suggestions%$tkp` where `tkp` is the `Proof:` token.  This generates
     a `TacticInfo` node at the `Proof:` position with a non-empty goal, which must NOT
@@ -267,6 +292,10 @@ def runAll : IO Unit := do
   testNoDuplicateResults;    IO.println "  ✓ testNoDuplicateResults"
   testDetectsDecideShortcutInVerboseFile;
                              IO.println "  ✓ testDetectsDecideShortcutInVerboseFile"
+  testDetectsDecideShortcutInWaterproofFile;
+                             IO.println "  ✓ testDetectsDecideShortcutInWaterproofFile"
+  testDetectsDecideShortcutInVerboseWaterproofFile;
+                             IO.println "  ✓ testDetectsDecideShortcutInVerboseWaterproofFile"
   testVerboseFilterReducesResults;
                              IO.println "  ✓ testVerboseFilterReducesResults"
   testVerboseFilterKeepsFirstPerStep;
