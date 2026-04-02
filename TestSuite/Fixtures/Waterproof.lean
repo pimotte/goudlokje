@@ -7,15 +7,15 @@ open Verso.Genre.Manual.InlineLean
 #doc (Verso.Genre.Manual) "Test Exercise" =>
 
 ```lean
--- Goal before `rfl` is `1 + 1 = 2`; `decide` can close it directly.
+-- Goal at `norm_num` is `1 + 1 = 2`; `decide` can close it directly.
 example : 1 + 1 = 2 := by
-  rfl
+  norm_num
 ```
 
 ```lean
--- Goal before each `rfl` step can be closed by `decide`.
+-- Goal at each `norm_num` step can be closed by `decide`.
 example : 2 + 2 = 4 ∧ 3 + 3 = 6 := by
   constructor
-  · rfl
-  · rfl
+  · norm_num
+  · norm_num
 ```

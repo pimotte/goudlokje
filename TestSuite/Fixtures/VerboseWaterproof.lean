@@ -9,10 +9,10 @@ open Verso.Genre.Manual.InlineLean
 
 ```lean
 set_option linter.unusedTactic false
--- Goal before `rfl` (inside first Verbose step) is `1 + 1 = 2`; `decide` can close it.
+-- Goal at `norm_num` (inside first Verbose step) is `1 + 1 = 2`; `decide` can close it.
 example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
   Let's first prove that 1 + 1 = 2
-  rfl
+  norm_num
   Let's now prove that 2 + 2 = 4
-  rfl
+  norm_num
 ```

@@ -1,5 +1,4 @@
--- This file imports Verbose and Waterproof packages so their oleans are compiled
--- as part of `lake build`, ensuring `analyzeFile` can import them at runtime
--- when processing fixture files that depend on these packages.
+-- This file ensures that Verbose and WaterproofGenre oleans are compiled
+-- as part of `lake build`, so they are available at runtime when `analyzeFile`
+-- processes fixture files that import these packages.
 import WaterproofGenre
-import Verbose.English.All
