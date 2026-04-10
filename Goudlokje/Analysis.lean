@@ -237,38 +237,6 @@ def collectTacticKinds (filePath : System.FilePath) : IO (Array String) := do
     if acc.contains k then acc else acc.push k) #[]
   return kinds
 
-initialize memoryDebugEnabledRef : IO.Ref Bool ← IO.mkRef false
-
-/-- Run an action with memory-debug logging temporarily enabled or disabled. -/
-def withMemoryDebug (enabled : Bool) (act : IO α) : IO α := do
-  let prev ← memoryDebugEnabledRef.get
-  memoryDebugEnabledRef.set enabled
-  try
-    act
-  finally
-    memoryDebugEnabledRef.set prev
-
-/-- Read a field such as `VmRSS` from `/proc/self/status` on Linux. -/
-private def readProcStatusField? (field : String) : IO (Option String) := do
-  let statusPath : System.FilePath := "/proc/self/status"
-  if !(← statusPath.pathExists) then
-    return none
-  let contents ← IO.FS.readFile statusPath
-  return (contents.splitOn "\n").find? (fun line => line.startsWith (field ++ ":"))
-
-/-- Emit a lightweight memory usage snapshot when debug memory logging is enabled. -/
-private def logMemorySnapshot (phase : String) : IO Unit := do
-  if ← memoryDebugEnabledRef.get then
-    let rss? ← readProcStatusField? "VmRSS"
-    let hwm? ← readProcStatusField? "VmHWM"
-    let rss := rss?.getD "VmRSS: unavailable"
-    let hwm := hwm?.getD "VmHWM: unavailable"
-    IO.println s!"  [memory] {phase} | {rss.trimAscii.toString} | {hwm.trimAscii.toString}"
-
-/-- Public wrapper for memory snapshots when memory-debug logging is enabled. -/
-def printMemorySnapshot (phase : String) : IO Unit :=
-  logMemorySnapshot phase
-
 /-- Keep only lines that are meaningful Lean context outside fenced `lean` blocks.
     This is used as a fallback for Verso/Waterproof `#doc` sources where the
     fenced code is no longer elaborated as ordinary top-level commands. -/
@@ -320,10 +288,7 @@ private def analyzeInput
   let opts  := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input displayPath.toString
   let (header, parserState, _messages) ← Parser.parseHeader inputCtx
-  logMemorySnapshot s!"start analyzeInput {displayPath}"
-  logMemorySnapshot "before processHeader"
   let (env, _) ← processHeader header opts {} inputCtx
-  logMemorySnapshot "after processHeader"
   let initCmdState : Command.State := Command.mkState env {} opts
   let initState : Frontend.State := {
     commandState := initCmdState
@@ -336,26 +301,17 @@ private def analyzeInput
   let mut done := false
   let mut cmdIdx := 0
   while !done do
-    logMemorySnapshot s!"before processCommand[{cmdIdx}]"
     let (isDone, newState) ← (Frontend.processCommand.run ctx).run state
-    logMemorySnapshot s!"after processCommand[{cmdIdx}]"
     -- Consume each command's trees immediately to avoid retaining all frontend data.
     let assignment := newState.commandState.infoState.assignment
     let resolvedTrees := newState.commandState.infoState.trees.toArray.map fun t =>
       t.substitute assignment
-    if ← memoryDebugEnabledRef.get then
-      IO.println s!"  [memory] command[{cmdIdx}] trees={resolvedTrees.size}"
-    logMemorySnapshot s!"after substitute[{cmdIdx}]"
     let tacticInfos :=
       resolvedTrees.foldl (fun acc t =>
         let raw := collectTacticInfos none t #[]
         let filtered :=
           if filterVerboseSteps then applyVerboseStepFilter raw inputCtx.fileMap else raw
         acc ++ skipLastPerDeclaration filtered inputCtx.fileMap) #[]
-    if ← memoryDebugEnabledRef.get then
-      let goalCount := tacticInfos.foldl (fun acc (_, ti) => acc + ti.goalsBefore.length) 0
-      IO.println s!"  [memory] command[{cmdIdx}] tacticInfos={tacticInfos.size} goals={goalCount}"
-    logMemorySnapshot s!"after collectTacticInfos[{cmdIdx}]"
     let mut commandProbeAttempts := 0
     let mut commandSuccesses := 0
     for (ci, ti) in tacticInfos do
@@ -374,13 +330,9 @@ private def analyzeInput
               column := pos.column
               tactic := tacticStr
             }
-    if ← memoryDebugEnabledRef.get then
-      IO.println s!"  [memory] command[{cmdIdx}] probeAttempts={commandProbeAttempts} successes={commandSuccesses} cumulativeResults={results.size}"
-    logMemorySnapshot s!"after probing[{cmdIdx}]"
     state := newState
     done := isDone
     cmdIdx := cmdIdx + 1
-  logMemorySnapshot s!"end analyzeInput {displayPath}"
   return results.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
 
 /-- Analyse a single Lean source file, returning every (position, tactic) pair
