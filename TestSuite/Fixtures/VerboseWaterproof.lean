@@ -2,6 +2,7 @@
 -- This combines both packages: WaterproofGenre for document structure, Verbose.English.All for proofs.
 -- After each Verbose step boundary, the sub-goal should be closeable by `decide`.
 import WaterproofGenre
+import Verbose.English.All
 open WaterproofGenre
 
 #doc (WaterproofGenre) "Test Exercise with Verbose Proofs" =>

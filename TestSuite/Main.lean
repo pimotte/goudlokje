@@ -1,3 +1,4 @@
+import FixtureDeps
 import TestSuite.Config
 import TestSuite.TestFile
 import TestSuite.Shortcuts

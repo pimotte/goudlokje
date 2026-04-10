@@ -256,6 +256,106 @@ private def getOrBuildEnv
     cache.modify (fun arr => arr.push (key, env))
     return env
 
+/-- Keep only lines that are meaningful Lean context outside fenced `lean` blocks.
+    This is used as a fallback for Verso/Waterproof `#doc` sources where the
+    fenced code is no longer elaborated as ordinary top-level commands. -/
+private def keepOutsideLeanFenceLine (line : String) : Bool :=
+  let trimmed := line.trimAscii.toString
+  trimmed.isEmpty ||
+  trimmed.startsWith "--" ||
+  trimmed.startsWith "/-" ||
+  trimmed.startsWith "-/" ||
+  trimmed.startsWith "import " ||
+  trimmed.startsWith "open " ||
+  trimmed.startsWith "namespace " ||
+  trimmed.startsWith "section " ||
+  trimmed.startsWith "end " ||
+  trimmed.startsWith "set_option "
+
+/-- Build an overlay source that preserves imports/preamble outside fenced blocks
+    and keeps only the contents of fenced `lean` blocks. All other lines are
+    replaced by blanks so source positions still line up with the original file. -/
+private def extractLeanFenceOverlay? (input : String) : Option String :=
+  let (linesRev, _inFence, sawFence, keptLean) :=
+    (input.splitOn "\n").foldl
+      (fun (acc : List String × Bool × Bool × Bool) line =>
+        let (linesRev, inFence, sawFence, keptLean) := acc
+        let trimmed := line.trimAscii.toString
+        if inFence then
+          if trimmed == "```" then
+            ("" :: linesRev, false, sawFence, keptLean)
+          else
+            (line :: linesRev, true, sawFence, keptLean || !trimmed.isEmpty)
+        else if trimmed.startsWith "```lean" then
+          ("" :: linesRev, true, true, keptLean)
+        else
+          let kept := if keepOutsideLeanFenceLine line then line else ""
+          (kept :: linesRev, false, sawFence, keptLean))
+      ([], false, false, false)
+  if sawFence && keptLean then
+    some ("\n".intercalate linesRev.reverse)
+  else
+    none
+
+/-- Analyse a single Lean input string, returning every (position, tactic) pair
+    where a probe tactic succeeds. -/
+private def analyzeInput
+    (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
+    (filterVerboseSteps : Bool := false)
+    (envCache : Option EnvCache := none)
+    (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none) :
+    IO (Array ProbeResult) := do
+  let opts  := Elab.async.set Options.empty false
+  let inputCtx := Parser.mkInputContext input displayPath.toString
+  let (header, parserState, _messages) ← Parser.parseHeader inputCtx
+  let headerKey := "\n".intercalate
+    (input.splitOn "\n" |>.takeWhile fun l =>
+      l.startsWith "import " || l.startsWith "--" || l.isEmpty)
+  let env ← match envCache with
+    | some cache =>
+      getOrBuildEnv cache headerKey do
+        let (env, _) ← processHeader header opts {} inputCtx; pure env
+    | none => do let (env, _) ← processHeader header opts {} inputCtx; pure env
+  let initCmdState : Command.State := Command.mkState env {} opts
+  let initState : Frontend.State := {
+    commandState := initCmdState
+    parserState  := parserState
+    cmdPos       := 0
+  }
+  let ctx : Frontend.Context := { inputCtx }
+  let mut results : Array ProbeResult := #[]
+  let mut state := initState
+  let mut done := false
+  while !done do
+    let (isDone, newState) ← (Frontend.processCommand.run ctx).run state
+    -- Consume each command's trees immediately to avoid retaining all frontend data.
+    let assignment := newState.commandState.infoState.assignment
+    let resolvedTrees := newState.commandState.infoState.trees.toArray.map fun t =>
+      t.substitute assignment
+    let tacticInfos :=
+      resolvedTrees.foldl (fun acc t =>
+        let raw := collectTacticInfos none t #[]
+        let filtered :=
+          if filterVerboseSteps then applyVerboseStepFilter raw inputCtx.fileMap else raw
+        acc ++ skipLastPerDeclaration filtered inputCtx.fileMap) #[]
+    for (ci, ti) in tacticInfos do
+      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+      for goal in ti.goalsBefore do
+        for tacticStr in probeTactics do
+          let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
+          if let some cb := onProbe then
+            cb pos.line pos.column tacticStr succeeded
+          if succeeded then
+            results := results.push {
+              file   := displayPath.toString
+              line   := pos.line
+              column := pos.column
+              tactic := tacticStr
+            }
+    state := newState
+    done := isDone
+  return results.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
+
 /-- Analyse a single Lean source file, returning every (position, tactic) pair
     where a probe tactic succeeds.
 
@@ -280,63 +380,13 @@ def analyzeFile
   -- Allow [init] declarations to be executed when importing modules
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let opts  := Elab.async.set Options.empty false
-  let inputCtx := Parser.mkInputContext input filePath.toString
-  let (header, parserState, _messages) ← Parser.parseHeader inputCtx
-  -- Cache key: all `import` lines at the top of the file (whitespace-terminated).
-  -- Files sharing the same import set produce the same key and reuse the same env.
-  let headerKey := "\n".intercalate
-    (input.splitOn "\n" |>.takeWhile fun l =>
-      l.startsWith "import " || l.startsWith "--" || l.isEmpty)
-  let env ← match envCache with
-    | some cache =>
-      getOrBuildEnv cache headerKey do
-        let (env, _) ← processHeader header opts {} inputCtx; pure env
-    | none => do let (env, _) ← processHeader header opts {} inputCtx; pure env
-  let initCmdState : Command.State := Command.mkState env {} opts
-  let initState : Frontend.State := {
-    commandState := initCmdState
-    parserState  := parserState
-    cmdPos       := 0
-  }
-  let ctx : Frontend.Context := { inputCtx }
-  -- Collect trees from each command (each command's trees are reset before the next)
-  let (allTrees, finalState) ← processCommandsCollectTrees ctx initState #[]
-  -- Resolve any pending lazy assignments
-  let assignment := finalState.commandState.infoState.assignment
-  let resolvedTrees := allTrees.map fun t => t.substitute assignment
-  -- Build tactic info per tree so that step-boundary state and skip-last logic
-  -- do not leak across independent commands.  Each tree corresponds to one
-  -- top-level command (e.g. one `example`, one `theorem`, or one `#doc` block).
-  -- Within each tree, `applyVerboseStepFilter` groups by `parentDecl?` to isolate
-  -- named declarations that share a tree (e.g. exercises inside a `#doc` block).
-  -- `skipLastPerDeclaration` is always applied after optional verbose filtering:
-  -- a shortcut at the final step of a proof never saves proof lines.
-  let tacticInfos :=
-    resolvedTrees.foldl (fun acc t =>
-      let raw := collectTacticInfos none t #[]
-      let filtered :=
-        if filterVerboseSteps then applyVerboseStepFilter raw inputCtx.fileMap else raw
-      acc ++ skipLastPerDeclaration filtered inputCtx.fileMap) #[]
-  -- Probe each goal at each tactic step
-  let mut results : Array ProbeResult := #[]
-  for (ci, ti) in tacticInfos do
-    let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-    for goal in ti.goalsBefore do
-      for tacticStr in probeTactics do
-        let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
-        if let some cb := onProbe then
-          cb pos.line pos.column tacticStr succeeded
-        if succeeded then
-          results := results.push {
-            file   := filePath.toString
-            line   := pos.line
-            column := pos.column
-            tactic := tacticStr
-          }
-  -- Deduplicate: multiple InfoTree nodes can cover the same tactic step,
-  -- and each goal in goalsBefore is probed independently, so the same
-  -- (file, line, column, tactic) tuple can appear several times.
-  return results.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
+  let directResults ← analyzeInput filePath input probeTactics filterVerboseSteps envCache onProbe
+  let merged ← match extractLeanFenceOverlay? input with
+    | some overlay =>
+      let overlayResults ← analyzeInput filePath overlay probeTactics filterVerboseSteps envCache onProbe
+      pure (directResults ++ overlayResults)
+    | none =>
+      pure directResults
+  return merged.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
 
 end Goudlokje
