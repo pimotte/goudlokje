@@ -90,16 +90,17 @@ def testVerboseFilterReducesResults : IO Unit := do
       s!"testVerboseFilter: expected filter to reduce shortcut count, \
         got unfiltered={withoutFilter.size} filtered={withFilter.size}")
 
-/-- Verbose step filtering: the filtered result keeps only the first tactic per step,
-    then skip-last removes the final step's position.  The fixture has 2 steps with
-    `show` as the first tactic each; after filtering and skip-last, only step 1 remains. -/
+/-- Verbose step filtering: each step has `show` (first) and `norm_num` (last in step).
+    Per-step skip-last keeps `show` for both steps; declaration-level skip-last then
+    drops the representative of the last step → only step 1's `show` remains. -/
 def testVerboseFilterKeepsFirstPerStep : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseMultiStep.lean"
   let results ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
-  -- 2 steps → filter keeps show@step1 and show@step2 → skip-last removes show@step2 → 1 shortcut
+  -- 2 steps × 2 tactics each → per-step skip-last keeps show@step1, show@step2
+  -- → declaration-level skip-last removes show@step2 → 1 shortcut
   unless results.size == 1 do
     throw (IO.userError
-      s!"testVerboseFilterKeepsFirstPerStep: expected 1 shortcut (step 1 only; step 2 is last), \
+      s!"testVerboseFilterKeepsFirstPerStep: expected 1 shortcut (step 1 only; step 2 dropped by skip-last), \
         got {results.size}")
 
 /-- onProbe callback is invoked for every probe attempt (success and failure).
@@ -178,20 +179,17 @@ def testOnProbeSuccessCountMatchesResults : IO Unit := do
     throw (IO.userError
       s!"testOnProbeSuccessCount: successes={succs} < results={results.size}")
 
-/-- Regression test for the mwe exercise 1.1.13 issue: a probe tactic that can close
-    the goal at the LAST step of a proof must not be reported as a shortcut.
-    A shortcut at the final step does not save any proof lines — the student still
-    has to write that step — so reporting it is a false positive.
-    The fixture has exactly 2 tactic positions (one per Verbose step) after filtering;
-    skip-last removes the second → exactly 1 shortcut remains. -/
+/-- Regression test for single-tactic Verbose steps: each step has exactly one tactic
+    (`norm_num`), which is both the first and last move in the step.  Per-step skip-last
+    skips these steps entirely — the student must write that one tactic regardless, so a
+    probe succeeding there is not a meaningful shortcut. -/
 def testSkipLastTacticNotReported : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/SkipLastStep.lean"
-  -- filterVerboseSteps reduces the fixture to exactly 2 positions (one per step);
-  -- skip-last then removes the last → 1 shortcut at step 1.
+  -- 2 steps × 1 tactic each → per-step skip-last drops both → 0 shortcuts
   let results ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
-  unless results.size == 1 do
+  unless results.size == 0 do
     throw (IO.userError
-      s!"testSkipLastTacticNotReported: expected exactly 1 shortcut (last step skipped), \
+      s!"testSkipLastTacticNotReported: expected 0 shortcuts (single-tactic steps skipped), \
         got {results.size}")
 
 /-- Regression test: the `Exercise`/`Example` Verbose command wraps the `Proof:` body
@@ -210,6 +208,21 @@ def testVerboseExerciseDoesNotProbeBeforeProof : IO Unit := do
     throw (IO.userError
       s!"testVerboseExerciseDoesNotProbeBeforeProof: expected 1 shortcut \
         (proof wrapper at Proof: must not be probed), got {results.size}")
+
+/-- Regression test: in a Waterproof+Verbose exercise where each step has exactly one
+    tactic (`· We conclude by hypothesis`), probing "We conclude by hypothesis" must find
+    no shortcuts.  Two fixes combine: `Lean.cdot` (`·`) is filtered as a synthetic
+    container (so the focused subgoal is not a probe position), and per-step skip-last
+    skips single-tactic steps entirely (the student must write that tactic regardless). -/
+def testBulletSeenAsStepInVerboseWaterproofFull : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testBulletSeenAsStep: expected 0 shortcuts (single-tactic steps skipped), \
+        got {results.size} at:{detail}")
 
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
@@ -237,5 +250,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testBulletSeenAsStepInVerboseWaterproofFull;
+                             IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
 
 end TestSuite.Analysis

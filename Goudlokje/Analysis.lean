@@ -43,13 +43,29 @@ structure ProbeResult where
        equal to the exercise conclusion, making it indistinguishable from the
        first proof step without this filter.
 
+    4. **The `·` focused-proof bullet** (`Lean.cdotTk`, `Lean.cdot`): the `·` syntax
+       produces two `TacticInfo` nodes at the bullet position — `Lean.cdotTk` for the
+       token and `Lean.cdot` for the tactic evaluator it expands into.  Both have
+       `goalsBefore` equal to the focused subgoal.  This is proof scaffolding — the
+       student must write something inside the bullet regardless.
+
+    5. **Verbose `strg_assumption`** (`tacticStrg_assumption`): the Verbose tactic
+       `We conclude by hypothesis` elaborates into an internal `strg_assumption` call.
+       This generates a child `TacticInfo` node at a position inside the tactic text,
+       not a position where a student could insert a different tactic.  Treating it as
+       a probe position produces false positives when the probe tactic is `assumption`
+       or equivalent (the student is already using assumption via the Verbose syntax).
+
     Kind names discovered empirically:
     - `Lean.Parser.Term.byTactic` — Lean core `by` block (as a term)
     - `by`                         — `by` as a tactic-level syntax node
     - `Lean.Parser.Tactic.tacticSeq` / `tacticSeq1Indented` — sequence containers
     - `Verbose.English.withSuggestions` — Verbose/English/Widget.lean
     - `Verbose.French.withSuggestions`  — Verbose/French/Widget.lean
-    - `withoutSuggestions`              — Verbose/Tactics/Statements.lean -/
+    - `withoutSuggestions`              — Verbose/Tactics/Statements.lean
+    - `Lean.cdotTk`                     — `·` bullet token node
+    - `Lean.cdot`                       — `·` bullet tactic evaluator node
+    - `tacticStrg_assumption`           — internal Verbose `strg_assumption` call -/
 private def isSyntheticTacticContainer (ti : TacticInfo) : Bool :=
   let k := ti.stx.getKind.toString
   k == "Lean.Parser.Term.byTactic"                ||
@@ -58,7 +74,10 @@ private def isSyntheticTacticContainer (ti : TacticInfo) : Bool :=
   k == "Lean.Parser.Tactic.tacticSeq1Indented"    ||
   k == "Verbose.English.withSuggestions"           ||
   k == "Verbose.French.withSuggestions"            ||
-  k == "withoutSuggestions"
+  k == "withoutSuggestions"                        ||
+  k == "Lean.cdotTk"                              ||
+  k == "Lean.cdot"                                ||
+  k == "tacticStrg_assumption"
 
 /-- Collect (ContextInfo, TacticInfo) pairs from an InfoTree.
     We use `PartialContextInfo.mergeIntoOuter?` to resolve the full `ContextInfo`.
@@ -122,18 +141,24 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "tacticLet'sNowProveThat_"   ||
   k == "tacticLet'sProveThat_Works_"
 
-/-- When `filterVerboseSteps` is true, keep only the first non-boundary tactic per
-    Verbose step, within each declaration.  Declarations without any step boundary
-    keep ALL their tactics (they are not Verbose-style and must not be suppressed).
+/-- When `filterVerboseSteps` is true, filter tactic positions from declarations that
+    contain Verbose step boundaries (e.g. `Let's first prove that …`).
+
+    For each such declaration, apply per-step skip-last: keep only the first
+    non-boundary tactic if the step has ≥2 such tactics; skip the step entirely if it
+    has exactly one (the student must write that tactic regardless — not a shortcut).
+
+    Declarations WITHOUT step boundaries are returned unchanged; the caller is expected
+    to call `skipLastPerDeclaration` afterwards to handle the declaration-level skip for
+    those groups (and also to handle per-tree splits in Waterproof/Verso `#doc` files,
+    where each step body may appear in its own InfoTree with no visible boundary).
 
     Filtering is applied per-declaration (grouped by `parentDecl?`) so that filter
-    state does not leak across independent theorems and exercises.  Without this
-    isolation, a Verbose-style example earlier in the file would cause the filter to
-    suppress all tactics in a later exercise that has no step boundaries of its own. -/
+    state does not leak across independent theorems and exercises. -/
 private def applyVerboseStepFilter
     (infos : Array (ContextInfo × TacticInfo)) (fileMap : FileMap) :
     Array (ContextInfo × TacticInfo) :=
-  -- Early exit: no step boundaries present → no filtering needed
+  -- Early exit: no step boundaries present → no filtering needed; caller handles skip-last
   if !infos.any (fun (_, ti) => isVerboseStepBoundary ti) then infos
   else
     -- Sort by source position
@@ -142,8 +167,8 @@ private def applyVerboseStepFilter
     let sorted := withPos.toList.mergeSort (fun (p1, _, _) (p2, _, _) =>
       p1.line < p2.line || (p1.line == p2.line && p1.column < p2.column))
     -- Group consecutive tactics by enclosing declaration (parentDecl?).
-    -- foldl over the sorted list accumulates groups in reverse with items within
-    -- each group also reversed; we reverse both at the end to restore source order.
+    -- foldl accumulates groups in reverse with items within each group also reversed;
+    -- we reverse both at the end to restore source order.
     let groups : List (Option Name × List (ContextInfo × TacticInfo)) :=
       sorted.foldl (fun acc (_, ci, ti) =>
         let decl := ci.parentDecl?
@@ -153,25 +178,39 @@ private def applyVerboseStepFilter
           if d == decl then (d, (ci, ti) :: items) :: rest
           else (decl, [(ci, ti)]) :: acc)
         []
-    -- For each group: if the group has step boundaries, apply the step filter
-    -- (keep only the first non-boundary tactic per step).  Otherwise keep all
-    -- (the declaration is not a Verbose-style proof).
+    -- Per-step skip-last: partition `items` (source order) into steps delimited by
+    -- step-boundary tactics, then for each step keep the first non-boundary tactic
+    -- only when the step contains ≥2 non-boundary tactics.  Single-tactic steps are
+    -- skipped: the student must write that one tactic regardless.
+    let filterStepBoundaryGroup (items : List (ContextInfo × TacticInfo)) :
+        List (ContextInfo × TacticInfo) :=
+      -- Build steps: each boundary flushes the current step into stepsRev.
+      -- Items within each step are accumulated in reverse for efficiency.
+      let (stepsRev, currentStepRev) := items.foldl
+        (fun (stepsRev, currentStepRev) (ci, ti) =>
+          if isVerboseStepBoundary ti then
+            (if currentStepRev.isEmpty then stepsRev
+             else currentStepRev.reverse :: stepsRev,
+             [])
+          else
+            (stepsRev, (ci, ti) :: currentStepRev))
+        ([], [])
+      let allSteps :=
+        (if currentStepRev.isEmpty then stepsRev
+         else currentStepRev.reverse :: stepsRev).reverse
+      -- Keep the first tactic of each step that has ≥2 tactics; skip single-tactic steps.
+      allSteps.foldl (fun acc step =>
+        match step with
+        | [] | [_] => acc
+        | first :: _ => acc ++ [first]) []
+    -- For each group: if it has step boundaries apply per-step skip-last,
+    -- otherwise return unchanged (skipLastPerDeclaration in the caller handles it).
     let filterGroup (items : List (ContextInfo × TacticInfo)) :
         List (ContextInfo × TacticInfo) :=
       if !items.any (fun (_, ti) => isVerboseStepBoundary ti) then
-        items  -- No step boundaries in this declaration → keep all
+        items
       else
-        let (result, _, _) := items.foldl
-          (fun (acc : Array (ContextInfo × TacticInfo) × Bool × Bool) (ci, ti) =>
-            let (result, inStep, stepGotFirst) := acc
-            if isVerboseStepBoundary ti then
-              (result, true, false)
-            else if inStep && !stepGotFirst then
-              (result.push (ci, ti), true, true)
-            else
-              (result, inStep, stepGotFirst))
-          (#[], false, false)
-        result.toList
+        filterStepBoundaryGroup items
     -- Reverse groups and items to restore source order, apply filter to each group
     let allResults : List (ContextInfo × TacticInfo) :=
       groups.reverse.foldl (fun acc (_, items) => acc ++ filterGroup items.reverse) []
@@ -236,6 +275,34 @@ def collectTacticKinds (filePath : System.FilePath) : IO (Array String) := do
     let k := ti.stx.getKind.toString
     if acc.contains k then acc else acc.push k) #[]
   return kinds
+
+/-- Collect (kind, line, column) for every TacticInfo node that survives
+    `isSyntheticTacticContainer` filtering.  Useful for diagnosing which nodes are
+    at a specific source position after filter changes. -/
+def collectTacticKindsWithPositions (filePath : System.FilePath) :
+    IO (Array (String × Nat × Nat)) := do
+  Lean.initSearchPath (← Lean.findSysroot)
+  unsafe Lean.enableInitializersExecution
+  let input ← IO.FS.readFile filePath
+  let opts  := Elab.async.set Options.empty false
+  let inputCtx := Parser.mkInputContext input filePath.toString
+  let (header, parserState, _messages) ← Parser.parseHeader inputCtx
+  let (env, _msgs) ← processHeader header opts {} inputCtx
+  let initCmdState : Command.State := Command.mkState env {} opts
+  let initState : Frontend.State := {
+    commandState := initCmdState
+    parserState  := parserState
+    cmdPos       := 0
+  }
+  let ctx : Frontend.Context := { inputCtx }
+  let (allTrees, finalState) ← processCommandsCollectTrees ctx initState #[]
+  let assignment := finalState.commandState.infoState.assignment
+  let resolvedTrees := allTrees.map fun t => t.substitute assignment
+  let tacticInfos : Array (ContextInfo × TacticInfo) :=
+    resolvedTrees.foldl (fun acc t => collectTacticInfos none t acc) #[]
+  return tacticInfos.map fun (ci, ti) =>
+    let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+    (ti.stx.getKind.toString, pos.line, pos.column)
 
 /-- Keep only lines that are meaningful Lean context outside fenced `lean` blocks.
     This is used as a fallback for Verso/Waterproof `#doc` sources where the
@@ -309,6 +376,10 @@ private def analyzeInput
     let tacticInfos :=
       resolvedTrees.foldl (fun acc t =>
         let raw := collectTacticInfos none t #[]
+        -- applyVerboseStepFilter applies per-step skip-last for Verbose boundary groups;
+        -- non-boundary groups pass through unchanged.  skipLastPerDeclaration then handles
+        -- the per-declaration last-step skip for all groups (including those already
+        -- filtered, and isolated single-tactic trees from Waterproof/Verso splitting).
         let filtered :=
           if filterVerboseSteps then applyVerboseStepFilter raw inputCtx.fileMap else raw
         acc ++ skipLastPerDeclaration filtered inputCtx.fileMap) #[]

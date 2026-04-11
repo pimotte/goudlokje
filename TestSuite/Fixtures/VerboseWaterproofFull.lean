@@ -24,3 +24,17 @@ Proof:
 QED
 ```
 ::::
+
+
+```lean
+Exercise "1.1.14"
+  Given: (p q r : Prop)
+  Assume: (_ : p) (_ : q)
+  Conclusion: p ∧ q
+Proof:
+  Let's first prove that p
+  · We conclude by hypothesis
+  Let's now prove that q
+  · We conclude by hypothesis
+QED
+```
