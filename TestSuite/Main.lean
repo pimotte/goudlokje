@@ -76,6 +76,10 @@ private def runTestInProcess (suite testName : String) : IO UInt32 := do
     TestSuite.Check.testCheckVerboseMode; return 0
   | "Check", "testCheckGracefulOnImportError" =>
     TestSuite.Check.testCheckGracefulOnImportError; return 0
+  | "Check", "testCheckVerboseWaterproofFullExactlyOneShortcut" =>
+    TestSuite.Check.testCheckVerboseWaterproofFullExactlyOneShortcut; return 0
+  | "Check", "testCheckCountsB3LintViolation" =>
+    TestSuite.Check.testCheckCountsB3LintViolation; return 0
   | "Update", "testUpdateAllCreatesTestFile" =>
     TestSuite.Update.testUpdateAllCreatesTestFile; return 0
   | "Update", "testUpdateAllIdempotent" =>
@@ -156,6 +160,8 @@ private def checkTests : Array IntTestSpec := #[
   { suite := "Check", name := "testCheckDebugMode" },
   { suite := "Check", name := "testCheckVerboseMode" },
   { suite := "Check", name := "testCheckGracefulOnImportError" },
+  { suite := "Check", name := "testCheckVerboseWaterproofFullExactlyOneShortcut" },
+  { suite := "Check", name := "testCheckCountsB3LintViolation" },
 ]
 
 private def updateTests : Array IntTestSpec := #[

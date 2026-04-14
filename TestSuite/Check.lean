@@ -80,6 +80,17 @@ def testCheckVerboseWaterproofFullExactlyOneShortcut : IO Unit := do
       s!"testCheckVerboseWaterproofFull (position): expected shortcut at line 19, \
         got line {results[0]!.line}")
 
+/-- Integration test: `runCheck` on LintB3.lean (which has an undocumented `sorry`)
+    must return > 0 because B3 (sorry) is an error-level lint violation.
+    This verifies that lint results are counted in the runCheck exit code
+    and that the EnvCache is correctly threaded through the check workflow. -/
+def testCheckCountsB3LintViolation : IO Unit := do
+  let cfg : Config := { tactics := #[] }
+  let n ← runCheck #["TestSuite/Fixtures/LintB3.lean"] cfg
+  unless n > 0 do
+    throw (IO.userError
+      s!"testCheckCountsB3LintViolation: expected >0 (B3 sorry counts as error), got {n}")
+
 def runAll : IO Unit := do
   testCheckNonZeroForUnexpectedShortcuts;
     IO.println "  ✓ testCheckNonZeroForUnexpectedShortcuts"
@@ -93,5 +104,7 @@ def runAll : IO Unit := do
     IO.println "  ✓ testCheckGracefulOnImportError"
   testCheckVerboseWaterproofFullExactlyOneShortcut;
     IO.println "  ✓ testCheckVerboseWaterproofFullExactlyOneShortcut"
+  testCheckCountsB3LintViolation;
+    IO.println "  ✓ testCheckCountsB3LintViolation"
 
 end TestSuite.Check

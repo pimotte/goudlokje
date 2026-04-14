@@ -4,6 +4,7 @@ import Goudlokje.Analysis
 import Goudlokje.ProbeWorker
 import Goudlokje.TestFile
 import Goudlokje.Shortcuts
+import Goudlokje.Lint
 
 namespace Goudlokje
 
@@ -13,7 +14,8 @@ private def promptYN (prompt : String) : IO Bool := do
   let line ← (← IO.getStdin).getLine
   return line.trimAscii.toString.toLower == "y"
 
-/-- Run update mode: interactively (or with --all) accept shortcuts and persist them.
+/-- Run update mode: interactively (or with --all) accept shortcuts and lint violations,
+    and persist them to the test file.
     Stale entries are removed (with confirmation in interactive mode, automatic in --all).
     When `debug` is true, prints analysis statistics per file.
     When `verbose` is true, implies `debug` and additionally lists all discovered
@@ -29,6 +31,7 @@ def runUpdate
       IO.println s!"  {ws.sourcePath}"
   if debugMode then
     IO.println s!"Probing with {cfg.tactics.size} tactic(s): {", ".intercalate cfg.tactics.toList}"
+  let envCache ← mkEnvCache
   for ws in worksheets do
     IO.println s!"Updating {ws.sourcePath}..."
     let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics cfg.filterVerboseSteps debugMode verbose
@@ -72,7 +75,43 @@ def runUpdate
       if remove then
         newExpected := newExpected.filter (· != s.entry)
 
-    let newTf : TestFile := { expected := newExpected }
+    -- Run lint checks and classify against the current test file, sharing the env cache.
+    let lintFound ← lintFile ws.sourcePath (some envCache)
+    let lintCr := classifyLint lintFound tf
+    let mut newLint := tf.lint
+
+    -- Handle unexpected lint violations: prompt user (or auto-accept with --all).
+    for v in lintCr.violations do
+      if let .unexpected r := v then
+        let accept ← do
+          if acceptAll then
+            IO.println s!"Accepting lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}"
+            pure true
+          else
+            promptYN s!"Lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}. Accept? [y/N] "
+        if accept then
+          newLint := newLint.push {
+            file    := r.file
+            line    := r.line
+            column  := r.column
+            check   := r.check
+            message := r.message
+          }
+
+    -- Handle stale lint entries: prompt user (or auto-remove with --all).
+    for s in lintCr.stale do
+      let remove ← do
+        if acceptAll then
+          IO.println s!"Removing stale lint entry [{s.entry.check}] {s.entry.file}:{s.entry.line}:{s.entry.column}"
+          pure true
+        else
+          promptYN s!"Stale lint [{s.entry.check}] at {s.entry.file}:{s.entry.line}:{s.entry.column}. Remove? [y/N] "
+      if remove then
+        newLint := newLint.filter fun e =>
+          !(e.file == s.entry.file && e.line == s.entry.line &&
+            e.column == s.entry.column && e.check == s.entry.check)
+
+    let newTf : TestFile := { expected := newExpected, lint := newLint }
     newTf.save testPath
 
 end Goudlokje

@@ -14,28 +14,34 @@ private structure WorksheetCheckSummary where
   shortcuts        : Array ShortcutResult
   stale            : Array StaleEntry
   unexpectedCount  : Nat
+  lintResult       : LintClassificationResult
 
 private def checkWorksheet
     (ws : WorksheetEntry) (cfg : Config)
-    (debugMode : Bool) (verbose : Bool) : IO WorksheetCheckSummary := do
+    (debugMode : Bool) (verbose : Bool) (envCache : EnvCache) : IO WorksheetCheckSummary := do
   let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics cfg.filterVerboseSteps debugMode verbose
   let found := analyzed.results
-  let tf := TestFile.load (ws.testPath.getD (ws.sourcePath.withExtension "test.json"))
+  let testPath := ws.testPath.getD (ws.sourcePath.withExtension "test.json")
+  let tf := TestFile.load testPath
   let cr := classify found (← tf)
   let unexpectedCount := cr.shortcuts.foldl (fun acc shortcut =>
     match shortcut with
     | .unexpected _ => acc + 1
     | .expected _ => acc) 0
+  -- Run lint checks and classify against the test file, sharing the env cache.
+  let lintFound ← lintFile ws.sourcePath (some envCache)
+  let lintCr := classifyLint lintFound (← tf)
   return {
     probeResultCount := found.size
     probeAttempts := analyzed.probeAttempts
     shortcuts := cr.shortcuts
     stale := cr.stale
     unexpectedCount := unexpectedCount
+    lintResult := lintCr
   }
 
-/-- Run check mode: analyse worksheets and report any unexpected shortcuts.
-    Returns the number of unexpected shortcuts found (non-zero → CI failure).
+/-- Run check mode: analyse worksheets and report any unexpected shortcuts or lint violations.
+    Returns the number of unexpected shortcuts + undocumented B3 lint errors (non-zero → CI failure).
     When `debug` is true, prints analysis statistics per file.
     When `verbose` is true, implies `debug` and additionally lists all discovered
     worksheets upfront and logs every individual probe hit per file. -/
@@ -50,10 +56,11 @@ def runCheck
       IO.println s!"  {ws.sourcePath}"
   if debugMode then
     IO.println s!"Probing with {cfg.tactics.size} tactic(s): {", ".intercalate cfg.tactics.toList}"
+  let envCache ← mkEnvCache
   let mut unexpectedCount := 0
   for ws in worksheets do
     IO.println s!"Checking {ws.sourcePath}..."
-    let summary ← checkWorksheet ws cfg debugMode verbose
+    let summary ← checkWorksheet ws cfg debugMode verbose envCache
     if debugMode then
       IO.println s!"  Found {summary.probeResultCount} probe result(s), {summary.shortcuts.size} shortcut(s), {summary.stale.size} stale entry/entries"
       if summary.probeAttempts == 0 && !cfg.tactics.isEmpty then
@@ -62,7 +69,17 @@ def runCheck
       printShortcutResult r
     for s in summary.stale do
       printStaleEntry s
+    -- Report lint results.
+    for v in summary.lintResult.violations do
+      printLintViolationResult v
+    for s in summary.lintResult.stale do
+      printStaleLintEntry s
     unexpectedCount := unexpectedCount + summary.unexpectedCount
+    -- Count undocumented B3 (error-level) lint violations as failures.
+    unexpectedCount := unexpectedCount + summary.lintResult.violations.foldl (fun acc v =>
+      match v with
+      | .unexpected r => if r.check == "B3" then acc + 1 else acc
+      | .expected _ => acc) 0
   return unexpectedCount
 
 end Goudlokje
