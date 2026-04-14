@@ -551,8 +551,12 @@ private def analyzeInput
   return results.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
 
 /-- A cache mapping import-header text to compiled environments.
+
     Reusing environments across files with the same imports avoids redundant
-    `.olean` loading (the dominant cost for files that import Mathlib). -/
+    `.olean` loading, which is the dominant cost when processing files that
+    transitively import Mathlib (e.g. via `Verbose.English.All`).  The cache
+    key is the raw import-header text, so files with identical imports share
+    one compiled `Environment` instead of each paying the full loading cost. -/
 abbrev EnvCache := IO.Ref (Array (String × Environment))
 
 /-- Create a fresh empty environment cache. -/

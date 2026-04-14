@@ -4,8 +4,15 @@ namespace TestSuite.Lint
 
 open Goudlokje
 
-/-- Run all lint checks using a shared env cache to avoid re-elaborating
-    Verbose imports for each test. -/
+/-- Run all lint checks using a shared env cache.
+
+    The cache is still needed: all three fixture files (`LintB1.lean`,
+    `LintB2.lean`, `LintB3.lean`) share the same `import Verbose.English.All`
+    header.  Building the Lean environment for that import (which transitively
+    pulls in Mathlib) is the dominant cost of each `lintFile` call.  Without
+    the cache, `processHeader` would run once per fixture — three times total —
+    for identical imports.  The shared `EnvCache` ensures the environment is
+    built exactly once and reused for the remaining two calls. -/
 def testAllLintChecks : IO Unit := do
   let cache ← mkEnvCache
   -- Lint the B1 fixture (raw tactics)
