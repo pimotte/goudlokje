@@ -1,11 +1,38 @@
 import Goudlokje.Config
 import Goudlokje.Discovery
 import Goudlokje.Analysis
+import Goudlokje.ProbeWorker
 import Goudlokje.TestFile
 import Goudlokje.Shortcuts
 import Goudlokje.Lint
 
 namespace Goudlokje
+
+private structure WorksheetCheckSummary where
+  probeResultCount : Nat
+  probeAttempts    : Nat
+  shortcuts        : Array ShortcutResult
+  stale            : Array StaleEntry
+  unexpectedCount  : Nat
+
+private def checkWorksheet
+    (ws : WorksheetEntry) (cfg : Config)
+    (debugMode : Bool) (verbose : Bool) : IO WorksheetCheckSummary := do
+  let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics cfg.filterVerboseSteps debugMode verbose
+  let found := analyzed.results
+  let tf := TestFile.load (ws.testPath.getD (ws.sourcePath.withExtension "test.json"))
+  let cr := classify found (← tf)
+  let unexpectedCount := cr.shortcuts.foldl (fun acc shortcut =>
+    match shortcut with
+    | .unexpected _ => acc + 1
+    | .expected _ => acc) 0
+  return {
+    probeResultCount := found.size
+    probeAttempts := analyzed.probeAttempts
+    shortcuts := cr.shortcuts
+    stale := cr.stale
+    unexpectedCount := unexpectedCount
+  }
 
 /-- Run check mode: analyse worksheets and report any unexpected shortcuts.
     Returns the number of unexpected shortcuts found (non-zero → CI failure).
@@ -23,34 +50,19 @@ def runCheck
       IO.println s!"  {ws.sourcePath}"
   if debugMode then
     IO.println s!"Probing with {cfg.tactics.size} tactic(s): {", ".intercalate cfg.tactics.toList}"
-  let cache ← mkEnvCache
   let mut unexpectedCount := 0
   for ws in worksheets do
     IO.println s!"Checking {ws.sourcePath}..."
-    -- Count every probe attempt (success or failure) so we can warn when nothing is probed.
-    let probeAttempts ← IO.mkRef (0 : Nat)
-    let probeLog : Option (Nat → Nat → String → Bool → IO Unit) :=
-      if debugMode then
-        some fun line col tactic succeeded => do
-          probeAttempts.modify (· + 1)
-          if verbose then
-            let mark := if succeeded then "✓" else "✗"
-            IO.println s!"  Probe {mark} {line}:{col} — `{tactic}`"
-      else none
-    let found ← analyzeFile ws.sourcePath cfg.tactics cfg.filterVerboseSteps (some cache) probeLog
-    let tf    ← TestFile.load (ws.testPath.getD (ws.sourcePath.withExtension "test.json"))
-    let cr    := classify found tf
+    let summary ← checkWorksheet ws cfg debugMode verbose
     if debugMode then
-      IO.println s!"  Found {found.size} probe result(s), {cr.shortcuts.size} shortcut(s), {cr.stale.size} stale entry/entries"
-      let attempts ← probeAttempts.get
-      if attempts == 0 && !cfg.tactics.isEmpty then
+      IO.println s!"  Found {summary.probeResultCount} probe result(s), {summary.shortcuts.size} shortcut(s), {summary.stale.size} stale entry/entries"
+      if summary.probeAttempts == 0 && !cfg.tactics.isEmpty then
         IO.println s!"  Warning: no tactic positions found in {ws.sourcePath} — verify all imports are available (run via `lake exe goudlokje`)"
-    for r in cr.shortcuts do
+    for r in summary.shortcuts do
       printShortcutResult r
-      if let .unexpected _ := r then
-        unexpectedCount := unexpectedCount + 1
-    for s in cr.stale do
+    for s in summary.stale do
       printStaleEntry s
+    unexpectedCount := unexpectedCount + summary.unexpectedCount
   return unexpectedCount
 
 end Goudlokje

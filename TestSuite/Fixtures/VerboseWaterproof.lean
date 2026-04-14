@@ -3,9 +3,9 @@
 -- After each Verbose step boundary, the sub-goal should be closeable by `decide`.
 import WaterproofGenre
 import Verbose.English.All
-open Verso.Genre.Manual.InlineLean
+open WaterproofGenre
 
-#doc (Verso.Genre.Manual) "Test Exercise with Verbose Proofs" =>
+#doc (WaterproofGenre) "Test Exercise with Verbose Proofs" =>
 
 ```lean
 set_option linter.unusedTactic false
