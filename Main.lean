@@ -1,6 +1,7 @@
 import Cli
 import Goudlokje.Config
 import Goudlokje.Check
+import Goudlokje.ProbeWorker
 import Goudlokje.Update
 
 open Cli
@@ -72,4 +73,8 @@ private def goudlokjeCmd : Cmd := `[Cli|
 ]
 
 def main (args : List String) : IO UInt32 :=
-  goudlokjeCmd.validate args
+  match args with
+  | "__probe_file__" :: workerArgs =>
+    Goudlokje.runProbeWorkerCli workerArgs
+  | _ =>
+    goudlokjeCmd.validate args

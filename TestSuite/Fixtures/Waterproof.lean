@@ -2,9 +2,9 @@
 -- Uses the Waterproof Genre `#doc` format; Lean code blocks inside have
 -- standard proofs where `decide` can shortcut intermediate steps.
 import WaterproofGenre
-open Verso.Genre.Manual.InlineLean
+open WaterproofGenre
 
-#doc (Verso.Genre.Manual) "Test Exercise" =>
+#doc (WaterproofGenre) "Test Exercise" =>
 
 ```lean
 -- Goal at `norm_num` is `1 + 1 = 2`; `decide` can close it directly.

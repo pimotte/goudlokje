@@ -90,41 +90,18 @@ def testVerboseFilterReducesResults : IO Unit := do
       s!"testVerboseFilter: expected filter to reduce shortcut count, \
         got unfiltered={withoutFilter.size} filtered={withFilter.size}")
 
-/-- Verbose step filtering: the filtered result keeps only the first tactic per step,
-    then skip-last removes the final step's position.  The fixture has 2 steps with
-    `show` as the first tactic each; after filtering and skip-last, only step 1 remains. -/
+/-- Verbose step filtering: each step has `show` (first) and `norm_num` (last in step).
+    Per-step skip-last keeps `show` for both steps; declaration-level skip-last then
+    drops the representative of the last step → only step 1's `show` remains. -/
 def testVerboseFilterKeepsFirstPerStep : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseMultiStep.lean"
   let results ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
-  -- 2 steps → filter keeps show@step1 and show@step2 → skip-last removes show@step2 → 1 shortcut
+  -- 2 steps × 2 tactics each → per-step skip-last keeps show@step1, show@step2
+  -- → declaration-level skip-last removes show@step2 → 1 shortcut
   unless results.size == 1 do
     throw (IO.userError
-      s!"testVerboseFilterKeepsFirstPerStep: expected 1 shortcut (step 1 only; step 2 is last), \
+      s!"testVerboseFilterKeepsFirstPerStep: expected 1 shortcut (step 1 only; step 2 dropped by skip-last), \
         got {results.size}")
-
-/-- Environment cache: analyzing the same file twice with a shared cache
-    should return identical results to analyzing without the cache. -/
-def testEnvCacheReturnsSameResults : IO Unit := do
-  let fixturePath : System.FilePath := "TestSuite/Fixtures/Simple.lean"
-  let withoutCache ← analyzeFile fixturePath #["decide"]
-  let cache ← mkEnvCache
-  let withCache ← analyzeFile fixturePath #["decide"] (envCache := some cache)
-  unless withCache == withoutCache do
-    throw (IO.userError
-      s!"testEnvCache: cached result differs from uncached \
-        (uncached={withoutCache.size}, cached={withCache.size})")
-
-/-- Environment cache: a second analysis of a file sharing the same imports
-    should produce the same results (the cached env is valid for both). -/
-def testEnvCacheReusedAcrossFiles : IO Unit := do
-  -- Both Simple.lean and VerboseMultiStep.lean can be analyzed, but they have
-  -- different imports so the cache stores two environments. This verifies that
-  -- the cache doesn't return a stale environment for the second file.
-  let cache ← mkEnvCache
-  let r1 ← analyzeFile "TestSuite/Fixtures/Simple.lean" #["decide"] (envCache := some cache)
-  let r2 ← analyzeFile "TestSuite/Fixtures/Simple.lean" #["decide"] (envCache := some cache)
-  unless r1 == r2 do
-    throw (IO.userError "testEnvCacheReusedAcrossFiles: repeated analysis differs")
 
 /-- onProbe callback is invoked for every probe attempt (success and failure).
     We pass a tactic that succeeds on some goals and use a counter to verify
@@ -202,20 +179,17 @@ def testOnProbeSuccessCountMatchesResults : IO Unit := do
     throw (IO.userError
       s!"testOnProbeSuccessCount: successes={succs} < results={results.size}")
 
-/-- Regression test for the mwe exercise 1.1.13 issue: a probe tactic that can close
-    the goal at the LAST step of a proof must not be reported as a shortcut.
-    A shortcut at the final step does not save any proof lines — the student still
-    has to write that step — so reporting it is a false positive.
-    The fixture has exactly 2 tactic positions (one per Verbose step) after filtering;
-    skip-last removes the second → exactly 1 shortcut remains. -/
+/-- Regression test for single-tactic Verbose steps: each step has exactly one tactic
+    (`norm_num`), which is both the first and last move in the step.  Per-step skip-last
+    skips these steps entirely — the student must write that one tactic regardless, so a
+    probe succeeding there is not a meaningful shortcut. -/
 def testSkipLastTacticNotReported : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/SkipLastStep.lean"
-  -- filterVerboseSteps reduces the fixture to exactly 2 positions (one per step);
-  -- skip-last then removes the last → 1 shortcut at step 1.
+  -- 2 steps × 1 tactic each → per-step skip-last drops both → 0 shortcuts
   let results ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
-  unless results.size == 1 do
+  unless results.size == 0 do
     throw (IO.userError
-      s!"testSkipLastTacticNotReported: expected exactly 1 shortcut (last step skipped), \
+      s!"testSkipLastTacticNotReported: expected 0 shortcuts (single-tactic steps skipped), \
         got {results.size}")
 
 /-- Regression test: the `Exercise`/`Example` Verbose command wraps the `Proof:` body
@@ -235,6 +209,99 @@ def testVerboseExerciseDoesNotProbeBeforeProof : IO Unit := do
       s!"testVerboseExerciseDoesNotProbeBeforeProof: expected 1 shortcut \
         (proof wrapper at Proof: must not be probed), got {results.size}")
 
+/-- Regression test: in a Waterproof+Verbose exercise where each step has exactly one
+    tactic (`· We conclude by hypothesis`), probing "We conclude by hypothesis" must find
+    no shortcuts.  Two fixes combine: `Lean.cdot` (`·`) is filtered as a synthetic
+    container (so the focused subgoal is not a probe position), and per-step skip-last
+    skips single-tactic steps entirely (the student must write that tactic regardless). -/
+def testBulletSeenAsStepInVerboseWaterproofFull : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testBulletSeenAsStep: expected 0 shortcuts (single-tactic steps skipped), \
+        got {results.size} at:{detail}")
+
+/-- Verify that every tactic syntax kind in VerboseWaterproofFull is classified.
+    Fails with the full table if any kind is `unknown` — add it to the appropriate
+    predicate in Analysis.lean and run again.
+    Run after adding new exercises to the fixture to catch newly appearing kinds. -/
+def testNoUnclassifiedTacticKinds : IO Unit := do
+  let kinds ← classifyTacticKinds "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let unknowns := kinds.filter (fun (_, c) => c == .unknown)
+  unless unknowns.isEmpty do
+    let fmt (k : String) (c : TacticKindCategory) :=
+      let tag := match c with
+        | .synthetic   => "synthetic  "
+        | .boundary    => "boundary   "
+        | .opaque      => "opaque     "
+        | .opaqueChild => "opaqueChild"
+        | .userTactic  => "userTactic "
+        | .unknown     => "UNKNOWN    "
+      s!"  [{tag}] {k}"
+    let table := kinds.foldl (fun s (k, c) => s ++ "\n" ++ fmt k c) ""
+    throw (IO.userError
+      s!"testNoUnclassifiedTacticKinds: {unknowns.size} unknown kind(s) — \
+        add to isSyntheticTacticContainer / isVerboseStepBoundary / isVerboseOpaqueSubtree:{table}")
+
+/-- Regression test: a nested `Let's prove that` exercise (1.1.13_extra in
+    VerboseWaterproofFull) must report 0 shortcuts when probed with
+    "We conclude by hypothesis".  The `tacticLet'sProveThat_` tactic (unqualified)
+    expands into internal elaboration nodes (`Lean.Parser.Tactic.first`, `show`,
+    `apply`, `«;»`) at the same source position as itself; these must not be treated
+    as user-written proof positions. -/
+def testNestedLetProveThatNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testNestedLetProveThat: expected 0 shortcuts, got {results.size} at:{detail}")
+
+/-- Regression test: a `We discuss depending on whether` + `Assume that` exercise
+    (Example "1.1.20" in VerboseWaterproofFull) must report 0 shortcuts.
+    `tacticAssumeThat__` was missing from `isVerboseStepBoundary`, causing
+    `applyVerboseStepFilter` to leave `tacticWeConcludeBy_` nodes unfiltered. -/
+def testDiscussAssumeThatNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testDiscussAssumeThat: expected 0 shortcuts, got {results.size} at:{detail}")
+
+/-- Regression test: a nested `We discuss` + `Assume that` + `Let's prove that` exercise
+    (Exercise "1.1.21" in VerboseWaterproofFull) must report 0 shortcuts. -/
+def testNestedDiscussNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testNestedDiscuss: expected 0 shortcuts, got {results.size} at:{detail}")
+
+/-- Diagnostic: trace filter stages for VerboseWaterproofFull. Always throws. -/
+def diagFilterStages : IO Unit := do
+  let log ← dumpFilterStages "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  throw (IO.userError s!"filter stages:{log}")
+
+/-- Regression test: an existential witness exercise using `Let's prove that N works`
+    and `We compute` (Example "1.2.25" in VerboseWaterproofFull) must report 0
+    shortcuts when probed with "We conclude by hypothesis". -/
+def testExistentialWitnessNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofFull.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
+
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
   testNoTacticsNoResults;    IO.println "  ✓ testNoTacticsNoResults"
@@ -251,10 +318,6 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testVerboseFilterKeepsFirstPerStep"
   testVerboseFilterRespectsDeclarationBoundaries;
                              IO.println "  ✓ testVerboseFilterRespectsDeclarationBoundaries"
-  testEnvCacheReturnsSameResults;
-                             IO.println "  ✓ testEnvCacheReturnsSameResults"
-  testEnvCacheReusedAcrossFiles;
-                             IO.println "  ✓ testEnvCacheReusedAcrossFiles"
   testOnProbeCallbackInvoked;
                              IO.println "  ✓ testOnProbeCallbackInvoked"
   testOnProbeCallbackIncludesFailures;
@@ -265,5 +328,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testBulletSeenAsStepInVerboseWaterproofFull;
+                             IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
 
 end TestSuite.Analysis

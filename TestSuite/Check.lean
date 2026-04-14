@@ -58,6 +58,28 @@ def testCheckGracefulOnImportError : IO Unit := do
     throw (IO.userError
       s!"testCheckGracefulOnImportError (debug): expected 0 shortcuts, got {n2}")
 
+/-- Integration test: `runCheck` on VerboseWaterproofFull.lean with the tactic
+    "Since p, q and r we conclude that p ∧ q ∧ r" must return exactly 1 unexpected
+    shortcut.  The fixture has 2 Verbose steps (lines 19–20); skip-last removes
+    the final step (line 20), leaving exactly the step at line 19 where the goal
+    is still `p ∧ q ∧ r` and the probe tactic closes it directly. -/
+def testCheckVerboseWaterproofFullExactlyOneShortcut : IO Unit := do
+  let tactic := "Since p, q and r we conclude that p ∧ q ∧ r"
+  let cfg : Config := { tactics := #[tactic] }
+  let n ← runCheck #["TestSuite/Fixtures/VerboseWaterproofFull.lean"] cfg
+  unless n == 1 do
+    throw (IO.userError
+      s!"testCheckVerboseWaterproofFull: expected exactly 1 unexpected shortcut, got {n}")
+  -- Also verify position: the single shortcut must be at line 19.
+  let results ← analyzeFile "TestSuite/Fixtures/VerboseWaterproofFull.lean" #[tactic]
+  unless results.size == 1 do
+    throw (IO.userError
+      s!"testCheckVerboseWaterproofFull (position): expected 1 probe result, got {results.size}")
+  unless results[0]!.line == 19 do
+    throw (IO.userError
+      s!"testCheckVerboseWaterproofFull (position): expected shortcut at line 19, \
+        got line {results[0]!.line}")
+
 def runAll : IO Unit := do
   testCheckNonZeroForUnexpectedShortcuts;
     IO.println "  ✓ testCheckNonZeroForUnexpectedShortcuts"
@@ -69,5 +91,7 @@ def runAll : IO Unit := do
     IO.println "  ✓ testCheckVerboseMode"
   testCheckGracefulOnImportError;
     IO.println "  ✓ testCheckGracefulOnImportError"
+  testCheckVerboseWaterproofFullExactlyOneShortcut;
+    IO.println "  ✓ testCheckVerboseWaterproofFullExactlyOneShortcut"
 
 end TestSuite.Check
