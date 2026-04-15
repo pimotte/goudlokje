@@ -44,12 +44,30 @@ def testParseJson : IO Unit := do
 def testLoadMissingFileReturnsEmpty : IO Unit := do
   let tf ← TestFile.load "/tmp/goudlokje_test_does_not_exist_abc123.test.json"
   assertEq 0 tf.expected.size "testLoadMissingFileReturnsEmpty"
+  assertEq 0 tf.lint.size     "testLoadMissingFileReturnsEmpty: lint"
+
+def testRoundTripLint : IO Unit := do
+  let original : TestFile := {
+    expected := #[]
+    lint := #[{ file := "a.lean", line := 5, column := 3, check := "B1", message := "Raw tactic" }]
+  }
+  let parsed ← IO.ofExcept (Lean.fromJson? (Lean.toJson original))
+  assertEq original parsed "testRoundTripLint"
+
+def testParseJsonNoLintField : IO Unit := do
+  -- Old format without "lint" field — should default to empty array for backward compatibility.
+  let raw := "{\"expected\":[]}"
+  let json ← IO.ofExcept (Lean.Json.parse raw)
+  let tf ← IO.ofExcept (Lean.fromJson? (α := TestFile) json)
+  assertEq 0 tf.lint.size "testParseJsonNoLintField"
 
 def runAll : IO Unit := do
-  testRoundTripEmpty;             IO.println "  ✓ testRoundTripEmpty"
-  testRoundTripSingle;            IO.println "  ✓ testRoundTripSingle"
-  testRoundTripMultiple;          IO.println "  ✓ testRoundTripMultiple"
-  testParseJson;                  IO.println "  ✓ testParseJson"
+  testRoundTripEmpty;              IO.println "  ✓ testRoundTripEmpty"
+  testRoundTripSingle;             IO.println "  ✓ testRoundTripSingle"
+  testRoundTripMultiple;           IO.println "  ✓ testRoundTripMultiple"
+  testParseJson;                   IO.println "  ✓ testParseJson"
   testLoadMissingFileReturnsEmpty; IO.println "  ✓ testLoadMissingFileReturnsEmpty"
+  testRoundTripLint;               IO.println "  ✓ testRoundTripLint"
+  testParseJsonNoLintField;        IO.println "  ✓ testParseJsonNoLintField"
 
 end TestSuite.TestFile

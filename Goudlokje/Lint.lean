@@ -4,6 +4,7 @@ import Lean.Elab.Tactic
 import Lean.Elab.Import
 import Lean.Meta
 import Goudlokje.Analysis
+import Goudlokje.TestFile
 
 /-!
   Goudlokje.Lint — Static lint checks for Lean Verbose worksheets.
@@ -324,5 +325,56 @@ def printLintResult (r : LintResult) : IO Unit :=
   match r.check with
   | "B3" => IO.eprintln s!"ERROR [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
   | _    => IO.eprintln s!"WARN  [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
+
+-- ============================================================
+-- Lint classification: integrate with TestFile infrastructure
+-- ============================================================
+
+/-- Classification of a found lint violation against the documented lint entries. -/
+inductive LintViolationResult where
+  /-- Lint violation NOT documented in the test file — reported as error/warning. -/
+  | unexpected (r : LintResult)
+  /-- Lint violation documented in the test file — suppressed. -/
+  | expected   (r : LintResult)
+  deriving Repr, Inhabited
+
+/-- A lint entry documented in the test file but the violation no longer occurs. -/
+structure StaleLintEntry where
+  entry : ExpectedLintViolation
+  deriving Repr, Inhabited
+
+structure LintClassificationResult where
+  violations : Array LintViolationResult
+  stale      : Array StaleLintEntry
+  deriving Repr
+
+/-- Match a lint result against an expected lint violation entry.
+    Matches on (file, line, column, check); message is not used for matching
+    so that documentation remains valid even if message text is updated. -/
+private def lintMatchesEntry (r : LintResult) (e : ExpectedLintViolation) : Bool :=
+  e.file == r.file && e.line == r.line && e.column == r.column && e.check == r.check
+
+/-- Classify lint violations against the expected lint entries in the test file. -/
+def classifyLint (found : Array LintResult) (tf : TestFile) : LintClassificationResult :=
+  let violations := found.map fun r =>
+    if tf.lint.any (lintMatchesEntry r) then .expected r else .unexpected r
+  let stale := tf.lint.filterMap fun e =>
+    if found.any (fun r => lintMatchesEntry r e) then none
+    else some { entry := e }
+  { violations, stale }
+
+/-- Pretty-print an unexpected lint violation. -/
+def printLintViolationResult (r : LintViolationResult) : IO Unit :=
+  match r with
+  | .unexpected v =>
+    match v.check with
+    | "B3" => IO.eprintln s!"ERROR: undocumented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
+    | _    => IO.eprintln s!"WARN:  undocumented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
+  | .expected v =>
+    IO.println s!"OK: documented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
+
+/-- Pretty-print a stale lint entry warning. -/
+def printStaleLintEntry (s : StaleLintEntry) : IO Unit :=
+  IO.eprintln s!"WARN: stale lint entry — [{s.entry.check}] {s.entry.file}:{s.entry.line}:{s.entry.column} no longer triggered"
 
 end Goudlokje
