@@ -93,6 +93,29 @@ def testClassifyLintStale : IO Unit := do
   unless cr.stale[0]!.entry.check == "B2" do
     throw (IO.userError "testClassifyLintStale: stale entry should be B2")
 
+/-- Regression: Verbose step-boundary lines starting with "Let's" or "Since" must
+    not produce any B1 violations, even though they expand internally to raw Lean
+    tactics such as `constructor` or `exact`. -/
+def testB1NoFalsePositivesOnVerboseLines : IO Unit := do
+  let cache ← mkEnvCache
+  let results ← lintFile "TestSuite/Fixtures/LintB1Verbose.lean" (some cache)
+  let b1 := results.filter (·.check == "B1")
+  unless b1.isEmpty do
+    let msgs := b1.map (fun r => s!"{r.line}:{r.column} {r.message}")
+    throw (IO.userError
+      s!"testB1NoFalsePositivesOnVerboseLines: expected 0 B1 violations on Verbose file, got {b1.size}: {msgs}")
+
+/-- Regression: a Verbose proof with no user-written (expr : T) ascriptions must
+    produce zero B2 violations (no false positives from internal Lean elaboration). -/
+def testB2NoFalsePositivesOnVerboseProofs : IO Unit := do
+  let cache ← mkEnvCache
+  let results ← lintFile "TestSuite/Fixtures/LintB2FalsePositive.lean" (some cache)
+  let b2 := results.filter (·.check == "B2")
+  unless b2.isEmpty do
+    let msgs := b2.map (fun r => s!"{r.line}:{r.column} {r.message}")
+    throw (IO.userError
+      s!"testB2NoFalsePositivesOnVerboseProofs: expected 0 B2 violations, got {b2.size}: {msgs}")
+
 def runAll : IO Unit := do
   testAllLintChecks
   IO.println "  ✓ testAllLintChecks"
@@ -100,5 +123,9 @@ def runAll : IO Unit := do
   IO.println "  ✓ testClassifyLint"
   testClassifyLintStale
   IO.println "  ✓ testClassifyLintStale"
+  testB1NoFalsePositivesOnVerboseLines
+  IO.println "  ✓ testB1NoFalsePositivesOnVerboseLines"
+  testB2NoFalsePositivesOnVerboseProofs
+  IO.println "  ✓ testB2NoFalsePositivesOnVerboseProofs"
 
 end TestSuite.Lint

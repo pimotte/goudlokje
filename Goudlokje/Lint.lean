@@ -134,6 +134,36 @@ private def isSorryLine (line : String) : Bool :=
              else stripped
   cmd.startsWith "sorry" || cmd.startsWith "admit"
 
+/-- Extract the leading tactic token from a source line (after stripping indentation
+    and focus-dot prefix) for use in violation messages. -/
+private def extractTacticToken (line : String) : String :=
+  let stripped := line.trimAsciiStart.toString
+  let cmd := if stripped.startsWith "· " then (stripped.drop 2).trimAsciiStart.toString
+             else stripped
+  match cmd.splitOn " " with
+  | tok :: _ => tok
+  | []       => "?"
+
+/-- Source-level leading tokens that correspond to known raw Lean / Mathlib tactics
+    in `rawLeanTacticKinds`.  If a tactic-info node's source line leads with a token
+    NOT in this set, the node comes from a Verbose (or other) macro expansion rather
+    than a directly-written raw Lean tactic and must not be flagged as B1.
+
+    The set mirrors the tactic kinds in `rawLeanTacticKinds` at the source level. -/
+private def rawLeanTacticSourceTokens : Array String := #[
+  "exact", "apply", "intro", "simp", "simp_all", "omega", "constructor",
+  "cases", "induction", "rfl", "rw", "rewrite", "have", "left", "right",
+  "contradiction", "trivial", "decide", "funext", "congr", "show", "suffices",
+  "refine", "specialize", "use", "obtain", "ext", "exfalso", "norm_num",
+  "ring", "linarith"
+]
+
+/-- True if the leading tactic token extracted from `line` is a known raw Lean tactic
+    source keyword.  Returns false for Verbose commands such as "Let's" or "Since",
+    preventing macro-expansion artifacts from being reported as B1 violations. -/
+private def isRawLeanTacticSourceLine (line : String) : Bool :=
+  rawLeanTacticSourceTokens.contains (extractTacticToken line)
+
 /-- Collect `(ContextInfo, TacticInfo)` pairs for raw Lean tactics.
     Only nodes with non-empty `goalsBefore` (real proof steps) are included. -/
 private partial def collectRawTacticInfos
@@ -152,20 +182,14 @@ private partial def collectRawTacticInfos
           let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
           let lineIdx := pos.line - 1
           let srcLine := if lineIdx < fileLines.size then fileLines[lineIdx]! else ""
-          if isSorryLine srcLine then acc else acc.push (ci, ti)
+          if isSorryLine srcLine then acc
+          -- Exclude Verbose macro expansions: only flag lines whose leading token
+          -- is an actual raw Lean tactic keyword (not "Let's", "Since", etc.)
+          else if !isRawLeanTacticSourceLine srcLine then acc
+          else acc.push (ci, ti)
       | _, _ => acc
     children.foldl (fun a c => collectRawTacticInfos ci? c fileLines a) acc'
   | .hole _ => acc
-
-/-- Extract the leading tactic token from a source line (after stripping indentation
-    and focus-dot prefix) for use in violation messages. -/
-private def extractTacticToken (line : String) : String :=
-  let stripped := line.trimAsciiStart.toString
-  let cmd := if stripped.startsWith "· " then (stripped.drop 2).trimAsciiStart.toString
-             else stripped
-  match cmd.splitOn " " with
-  | tok :: _ => tok
-  | []       => "?"
 
 -- ============================================================
 -- CheckB2: type annotation detection
@@ -210,21 +234,34 @@ private partial def collectFixAnnotationInfos
 /-- Collect `(ContextInfo, TermInfo)` pairs for parenthesised type-cast annotations
     `(expr : T)` in proof bodies.  Uses `Lean.Parser.Term.typeAscription` kind and
     excludes binder positions (`isBinder = true`) to avoid flagging `(x : T)` in
-    `intro` / `have` binders or theorem statement type annotations. -/
+    `intro` / `have` binders or theorem statement type annotations.
+
+    Additionally, only nodes whose source position starts with `(` in the source file
+    are included.  This filters out internally-synthesised `typeAscription` info-tree
+    nodes that Lean / Lean Verbose inserts during elaboration but that do not
+    correspond to any user-written `(expr : T)` in the proof body. -/
 private partial def collectTypeAscriptionInfos
-    (ci? : Option ContextInfo) (tree : InfoTree)
+    (ci? : Option ContextInfo) (tree : InfoTree) (fileLines : Array String)
     (acc : Array (ContextInfo × TermInfo)) : Array (ContextInfo × TermInfo) :=
   match tree with
   | .context pci child =>
-    collectTypeAscriptionInfos (pci.mergeIntoOuter? ci?) child acc
+    collectTypeAscriptionInfos (pci.mergeIntoOuter? ci?) child fileLines acc
   | .node info children =>
     let acc' := match ci?, info with
       | some ci, .ofTermInfo ti =>
         if ti.stx.getKind.toString == "Lean.Parser.Term.typeAscription" && !ti.isBinder
-        then acc.push (ci, ti)
+        then
+          -- Guard: the source character at the node's position must be '(' to
+          -- confirm this is a user-written ascription and not a compiler-inserted one.
+          let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+          let lineIdx := pos.line - 1
+          let srcLine := if lineIdx < fileLines.size then fileLines[lineIdx]! else ""
+          -- pos.column is a 0-based offset; check the char at that position is '('.
+          -- For ASCII source lines (typical Lean proofs) byte-offset == char-index.
+          if (srcLine.drop pos.column).startsWith "(" then acc.push (ci, ti) else acc
         else acc
       | _, _ => acc
-    children.foldl (fun a c => collectTypeAscriptionInfos ci? c a) acc'
+    children.foldl (fun a c => collectTypeAscriptionInfos ci? c fileLines a) acc'
   | .hole _ => acc
 
 -- ============================================================
@@ -305,7 +342,7 @@ def lintFile
         check := "B2", message := "Fix command with explicit type annotation"
       }
     -- CheckB2: type-cast ascriptions
-    let ascInfos := collectTypeAscriptionInfos none tree #[]
+    let ascInfos := collectTypeAscriptionInfos none tree fileLines #[]
     for (ci, ti) in ascInfos do
       let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
       raw := raw.push {

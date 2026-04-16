@@ -24,7 +24,8 @@ lean_lib "TestFixtures" where
   roots := #[`TestSuite.Fixtures.Simple, `TestSuite.Fixtures.Verbose,
              `TestSuite.Fixtures.VerboseMultiStep, `TestSuite.Fixtures.SkipLastStep,
              `TestSuite.Fixtures.LintB1, `TestSuite.Fixtures.LintB2,
-             `TestSuite.Fixtures.LintB3]
+             `TestSuite.Fixtures.LintB3, `TestSuite.Fixtures.LintB1Verbose,
+             `TestSuite.Fixtures.LintB2FalsePositive]
 
 -- FixtureDeps imports Verbose and Waterproof packages so their oleans are compiled.
 -- This ensures `analyzeFile` can import them at runtime when processing fixture files.
