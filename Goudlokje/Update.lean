@@ -80,27 +80,35 @@ def runUpdate
     let mut newLint := tf.lint
 
     -- Handle unexpected lint violations: prompt user (or auto-accept with --all).
+    -- B1 violations are never offered for acceptance: they always fail the build.
     for v in lintCr.violations do
       if let .unexpected r := v then
-        let accept ← do
-          if acceptAll then
-            IO.println s!"Accepting lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}"
-            pure true
-          else
-            promptYN s!"Lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}. Accept? [y/N] "
-        if accept then
-          newLint := newLint.push {
-            file    := r.file
-            line    := r.line
-            column  := r.column
-            check   := r.check
-            message := r.message
-          }
+        if r.check == "B1" then
+          IO.eprintln s!"ERROR: B1 violation cannot be suppressed — {r.file}:{r.line}:{r.column} — {r.message}"
+        else
+          let accept ← do
+            if acceptAll then
+              IO.println s!"Accepting lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}"
+              pure true
+            else
+              promptYN s!"Lint [{r.check}] at {r.file}:{r.line}:{r.column} — {r.message}. Accept? [y/N] "
+          if accept then
+            newLint := newLint.push {
+              file    := r.file
+              line    := r.line
+              column  := r.column
+              check   := r.check
+              message := r.message
+            }
 
     -- Handle stale lint entries: prompt user (or auto-remove with --all).
+    -- B1 entries are always removed automatically (they can never be re-added).
     for s in lintCr.stale do
       let remove ← do
-        if acceptAll then
+        if s.entry.check == "B1" then
+          IO.println s!"Removing undocumentable B1 entry {s.entry.file}:{s.entry.line}:{s.entry.column}"
+          pure true
+        else if acceptAll then
           IO.println s!"Removing stale lint entry [{s.entry.check}] {s.entry.file}:{s.entry.line}:{s.entry.column}"
           pure true
         else

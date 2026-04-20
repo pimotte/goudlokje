@@ -25,6 +25,7 @@ lean_lib "TestFixtures" where
              `TestSuite.Fixtures.VerboseMultiStep, `TestSuite.Fixtures.SkipLastStep,
              `TestSuite.Fixtures.LintB1, `TestSuite.Fixtures.LintB2,
              `TestSuite.Fixtures.LintB3, `TestSuite.Fixtures.LintB1Verbose,
+             `TestSuite.Fixtures.LintB1VerboseCheck,
              `TestSuite.Fixtures.LintB2FalsePositive]
 
 -- FixtureDeps imports Verbose and Waterproof packages so their oleans are compiled.

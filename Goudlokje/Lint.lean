@@ -47,6 +47,39 @@ structure LintResult where
   deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
 
 -- ============================================================
+-- Verbose Lean detection
+-- ============================================================
+
+/-- Return true if the tactic kind belongs to the Lean Verbose library.
+    Covers step-boundary tactics, opaque Verbose subtrees, and proof wrappers
+    (`withSuggestions`, `withoutSuggestions`).  Any of these in an InfoTree
+    indicates the proof was written using Lean Verbose. -/
+private def isVerboseTacticKind (kind : String) : Bool :=
+  kind == "tacticLet'sFirstProveThat_"                             ||
+  kind == "tacticLet'sNowProveThat_"                              ||
+  kind == "tacticLet'sProveThat_Works_"                           ||
+  kind == "tacticLet'sProveThat_"                                 ||
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  kind == "tacticWeCompute_"                                      ||
+  kind == "Verbose.English.withSuggestions"                       ||
+  kind == "Verbose.French.withSuggestions"                        ||
+  kind == "withoutSuggestions"                                    ||
+  kind == "tacticStrg_assumption"
+
+/-- Return true if `tree` contains at least one Verbose tactic node.
+    Used to restrict B1 to Verbose Lean proofs only. -/
+private partial def treeContainsVerbose (tree : InfoTree) : Bool :=
+  match tree with
+  | .context _ child => treeContainsVerbose child
+  | .node info children =>
+    (match info with
+     | .ofTacticInfo ti => isVerboseTacticKind ti.stx.getKind.toString
+     | _ => false) ||
+    children.any treeContainsVerbose
+  | .hole _ => false
+
+-- ============================================================
 -- CheckB3: sorry detection via TermInfo
 -- ============================================================
 
@@ -322,17 +355,18 @@ def lintFile
         file := fileStr, line := pos.line, column := pos.column,
         check := "B3", message := "sorry in proof body"
       }
-    -- CheckB1: raw Lean tactics
-    let rawInfos := collectRawTacticInfos none tree fileLines #[]
-    for (ci, ti) in rawInfos do
-      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-      let lineIdx := pos.line - 1
-      let srcLine := if lineIdx < fileLines.size then fileLines[lineIdx]! else ""
-      let tacticToken := extractTacticToken srcLine
-      raw := raw.push {
-        file := fileStr, line := pos.line, column := pos.column,
-        check := "B1", message := s!"Raw Lean tactic '{tacticToken}' in proof body"
-      }
+    -- CheckB1: raw Lean tactics — only in Verbose Lean proofs.
+    if treeContainsVerbose tree then
+      let rawInfos := collectRawTacticInfos none tree fileLines #[]
+      for (ci, ti) in rawInfos do
+        let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        let lineIdx := pos.line - 1
+        let srcLine := if lineIdx < fileLines.size then fileLines[lineIdx]! else ""
+        let tacticToken := extractTacticToken srcLine
+        raw := raw.push {
+          file := fileStr, line := pos.line, column := pos.column,
+          check := "B1", message := s!"Raw Lean tactic '{tacticToken}' in proof body"
+        }
     -- CheckB2: Fix with type annotation
     let fixInfos := collectFixAnnotationInfos none tree fileLines #[]
     for (ci, ti) in fixInfos do
@@ -360,8 +394,8 @@ def lintFile
 /-- Pretty-print a lint result to stdout. -/
 def printLintResult (r : LintResult) : IO Unit :=
   match r.check with
-  | "B3" => IO.eprintln s!"ERROR [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
-  | _    => IO.eprintln s!"WARN  [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
+  | "B3" | "B1" => IO.eprintln s!"ERROR [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
+  | _            => IO.eprintln s!"WARN  [{r.check}] {r.file}:{r.line}:{r.column} — {r.message}"
 
 -- ============================================================
 -- Lint classification: integrate with TestFile infrastructure
@@ -391,12 +425,21 @@ structure LintClassificationResult where
 private def lintMatchesEntry (r : LintResult) (e : ExpectedLintViolation) : Bool :=
   e.file == r.file && e.line == r.line && e.column == r.column && e.check == r.check
 
-/-- Classify lint violations against the expected lint entries in the test file. -/
+/-- Classify lint violations against the expected lint entries in the test file.
+
+    B1 violations are always classified as `.unexpected` — they cannot be suppressed
+    via the test file.  B1 entries in the test file are always considered stale
+    (they should never have been added and must be removed). -/
 def classifyLint (found : Array LintResult) (tf : TestFile) : LintClassificationResult :=
   let violations := found.map fun r =>
-    if tf.lint.any (lintMatchesEntry r) then .expected r else .unexpected r
+    -- B1 cannot be suppressed; it is always unexpected regardless of the test file.
+    if r.check == "B1" then .unexpected r
+    else if tf.lint.any (lintMatchesEntry r) then .expected r
+    else .unexpected r
   let stale := tf.lint.filterMap fun e =>
-    if found.any (fun r => lintMatchesEntry r e) then none
+    -- B1 entries are always stale: B1 violations cannot be documented in the test file.
+    if e.check == "B1" then some { entry := e }
+    else if found.any (fun r => lintMatchesEntry r e) then none
     else some { entry := e }
   { violations, stale }
 
@@ -405,8 +448,8 @@ def printLintViolationResult (r : LintViolationResult) : IO Unit :=
   match r with
   | .unexpected v =>
     match v.check with
-    | "B3" => IO.eprintln s!"ERROR: undocumented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
-    | _    => IO.eprintln s!"WARN:  undocumented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
+    | "B3" | "B1" => IO.eprintln s!"ERROR: lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
+    | _            => IO.eprintln s!"WARN:  undocumented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
   | .expected v =>
     IO.println s!"OK: documented lint [{v.check}] {v.file}:{v.line}:{v.column} — {v.message}"
 

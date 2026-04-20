@@ -17,15 +17,21 @@ open Goudlokje
     built exactly once and reused for the remaining two calls. -/
 def testAllLintChecks : IO Unit := do
   let cache ← mkEnvCache
-  -- Lint the B1 fixture (raw tactics)
+  -- B1 does NOT fire on regular (non-Verbose) Lean proofs.
   let b1Results ← lintFile "TestSuite/Fixtures/LintB1.lean" (some cache)
   let b1 := b1Results.filter (·.check == "B1")
-  unless b1.size ≥ 2 do
+  unless b1.size == 0 do
     throw (IO.userError
-      s!"testAllLintChecks [B1]: expected ≥2 B1 violations, got {b1.size}")
-  unless b1.any (fun r => (r.message.splitOn "constructor").length > 1) do
+      s!"testAllLintChecks [B1]: expected 0 B1 violations on regular proof, got {b1.size}")
+  -- B1 DOES fire on Verbose Lean proofs with raw tactics.
+  let b1VerboseResults ← lintFile "TestSuite/Fixtures/LintB1VerboseCheck.lean" (some cache)
+  let b1Verbose := b1VerboseResults.filter (·.check == "B1")
+  unless b1Verbose.size ≥ 2 do
     throw (IO.userError
-      "testAllLintChecks [B1]: expected message mentioning 'constructor'")
+      s!"testAllLintChecks [B1Verbose]: expected ≥2 B1 violations in Verbose proof, got {b1Verbose.size}")
+  unless b1Verbose.any (fun r => (r.message.splitOn "exact").length > 1) do
+    throw (IO.userError
+      "testAllLintChecks [B1Verbose]: expected message mentioning 'exact'")
   -- B3 must be empty for the B1 fixture (no sorry)
   let b3inB1 := b1Results.filter (·.check == "B3")
   unless b3inB1.isEmpty do
@@ -61,7 +67,9 @@ def testAllLintChecks : IO Unit := do
           throw (IO.userError
             s!"testAllLintChecks [B2 dedup]: duplicate at {ri.line}:{ri.column}")
 
-/-- `classifyLint` correctly classifies expected, unexpected, and stale lint violations. -/
+/-- `classifyLint` correctly classifies expected, unexpected, and stale lint violations.
+    B1 violations are always unexpected (cannot be suppressed via test.json).
+    B1 entries in test.json are always stale (B1 cannot be documented). -/
 def testClassifyLint : IO Unit := do
   let violations : Array LintResult := #[
     { file := "a.lean", line := 1, column := 0, check := "B1", message := "Raw Lean tactic 'exact'" },
@@ -72,15 +80,15 @@ def testClassifyLint : IO Unit := do
     { file := "a.lean", line := 1, column := 0, check := "B1", message := "Raw Lean tactic 'exact'" }
   ]}
   let cr := classifyLint violations tf
-  -- B1@line1 should be classified as expected.
-  unless cr.violations.any (fun v => match v with | .expected r => r.line == 1 && r.check == "B1" | _ => false) do
-    throw (IO.userError "testClassifyLint: B1@line1 should be 'expected'")
+  -- B1@line1 should always be classified as unexpected (B1 cannot be suppressed via test.json).
+  unless cr.violations.any (fun v => match v with | .unexpected r => r.line == 1 && r.check == "B1" | _ => false) do
+    throw (IO.userError "testClassifyLint: B1@line1 should be 'unexpected' (B1 cannot be suppressed)")
   -- B3@line2 should be classified as unexpected.
   unless cr.violations.any (fun v => match v with | .unexpected r => r.line == 2 && r.check == "B3" | _ => false) do
     throw (IO.userError "testClassifyLint: B3@line2 should be 'unexpected'")
-  -- No stale entries (the documented B1@line1 is still present).
-  unless cr.stale.isEmpty do
-    throw (IO.userError s!"testClassifyLint: expected no stale entries, got {cr.stale.size}")
+  -- The documented B1@line1 entry should appear as stale (B1 entries cannot be documented).
+  unless cr.stale.any (fun s => s.entry.check == "B1" && s.entry.line == 1) do
+    throw (IO.userError "testClassifyLint: B1@line1 TestFile entry should be stale (B1 cannot be documented)")
 
 /-- `classifyLint` detects stale lint entries whose violation no longer occurs. -/
 def testClassifyLintStale : IO Unit := do
@@ -130,6 +138,20 @@ def testLintFileIsolatedMatchesDirectCall : IO Unit := do
       throw (IO.userError
         s!"testLintFileIsolatedMatchesDirectCall: {r.check}@{r.line}:{r.column} missing from isolated results")
 
+/-- B1 violations are always unexpected even when present in a test file with matching entries. -/
+def testB1AlwaysUnexpectedInClassify : IO Unit := do
+  let violations : Array LintResult := #[
+    { file := "x.lean", line := 5, column := 2, check := "B1", message := "Raw Lean tactic 'exact'" }
+  ]
+  let tf : TestFile := { expected := #[], lint := #[
+    { file := "x.lean", line := 5, column := 2, check := "B1", message := "Raw Lean tactic 'exact'" }
+  ]}
+  let cr := classifyLint violations tf
+  unless cr.violations.all (fun v => match v with | .unexpected _ => true | .expected _ => false) do
+    throw (IO.userError "testB1AlwaysUnexpected: B1 violation should always be 'unexpected'")
+  unless cr.stale.any (fun s => s.entry.check == "B1") do
+    throw (IO.userError "testB1AlwaysUnexpected: matching B1 TestFile entry should be stale")
+
 def runAll : IO Unit := do
   testAllLintChecks
   IO.println "  ✓ testAllLintChecks"
@@ -143,5 +165,7 @@ def runAll : IO Unit := do
   IO.println "  ✓ testB2NoFalsePositivesOnVerboseProofs"
   testLintFileIsolatedMatchesDirectCall
   IO.println "  ✓ testLintFileIsolatedMatchesDirectCall"
+  testB1AlwaysUnexpectedInClassify
+  IO.println "  ✓ testB1AlwaysUnexpectedInClassify"
 
 end TestSuite.Lint

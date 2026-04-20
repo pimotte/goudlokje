@@ -74,10 +74,11 @@ def runCheck
     for s in summary.lintResult.stale do
       printStaleLintEntry s
     unexpectedCount := unexpectedCount + summary.unexpectedCount
-    -- Count undocumented B3 (error-level) lint violations as failures.
+    -- Count B1 and B3 lint violations as build failures.
+    -- B1 always fails the build (cannot be suppressed); B3 (sorry) is always an error.
     unexpectedCount := unexpectedCount + summary.lintResult.violations.foldl (fun acc v =>
       match v with
-      | .unexpected r => if r.check == "B3" then acc + 1 else acc
+      | .unexpected r => if r.check == "B1" || r.check == "B3" then acc + 1 else acc
       | .expected _ => acc) 0
   return unexpectedCount
 
