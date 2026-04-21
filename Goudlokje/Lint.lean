@@ -47,39 +47,6 @@ structure LintResult where
   deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
 
 -- ============================================================
--- Verbose Lean detection
--- ============================================================
-
-/-- Return true if the tactic kind belongs to the Lean Verbose library.
-    Covers step-boundary tactics, opaque Verbose subtrees, and proof wrappers
-    (`withSuggestions`, `withoutSuggestions`).  Any of these in an InfoTree
-    indicates the proof was written using Lean Verbose. -/
-private def isVerboseTacticKind (kind : String) : Bool :=
-  kind == "tacticLet'sFirstProveThat_"                             ||
-  kind == "tacticLet'sNowProveThat_"                              ||
-  kind == "tacticLet'sProveThat_Works_"                           ||
-  kind == "tacticLet'sProveThat_"                                 ||
-  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
-  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
-  kind == "tacticWeCompute_"                                      ||
-  kind == "Verbose.English.withSuggestions"                       ||
-  kind == "Verbose.French.withSuggestions"                        ||
-  kind == "withoutSuggestions"                                    ||
-  kind == "tacticStrg_assumption"
-
-/-- Return true if `tree` contains at least one Verbose tactic node.
-    Used to restrict B1 to Verbose Lean proofs only. -/
-private partial def treeContainsVerbose (tree : InfoTree) : Bool :=
-  match tree with
-  | .context _ child => treeContainsVerbose child
-  | .node info children =>
-    (match info with
-     | .ofTacticInfo ti => isVerboseTacticKind ti.stx.getKind.toString
-     | _ => false) ||
-    children.any treeContainsVerbose
-  | .hole _ => false
-
--- ============================================================
 -- CheckB3: sorry detection via TermInfo
 -- ============================================================
 
@@ -347,16 +314,17 @@ def lintFile
   let fileStr := filePath.toString
   let mut raw : Array LintResult := #[]
   for tree in resolvedTrees do
-    -- CheckB3: sorry terms
-    let sorryInfos := collectSorryTermInfos none tree #[]
-    for (ci, ti) in sorryInfos do
-      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-      raw := raw.push {
-        file := fileStr, line := pos.line, column := pos.column,
-        check := "B3", message := "sorry in proof body"
-      }
-    -- CheckB1: raw Lean tactics — only in Verbose Lean proofs.
+    -- All checks restricted to Verbose Lean proofs only.
     if treeContainsVerbose tree then
+      -- CheckB3: sorry terms
+      let sorryInfos := collectSorryTermInfos none tree #[]
+      for (ci, ti) in sorryInfos do
+        let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        raw := raw.push {
+          file := fileStr, line := pos.line, column := pos.column,
+          check := "B3", message := "sorry in proof body"
+        }
+      -- CheckB1: raw Lean tactics
       let rawInfos := collectRawTacticInfos none tree fileLines #[]
       for (ci, ti) in rawInfos do
         let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
@@ -367,22 +335,22 @@ def lintFile
           file := fileStr, line := pos.line, column := pos.column,
           check := "B1", message := s!"Raw Lean tactic '{tacticToken}' in proof body"
         }
-    -- CheckB2: Fix with type annotation
-    let fixInfos := collectFixAnnotationInfos none tree fileLines #[]
-    for (ci, ti) in fixInfos do
-      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-      raw := raw.push {
-        file := fileStr, line := pos.line, column := pos.column,
-        check := "B2", message := "Fix command with explicit type annotation"
-      }
-    -- CheckB2: type-cast ascriptions
-    let ascInfos := collectTypeAscriptionInfos none tree fileLines #[]
-    for (ci, ti) in ascInfos do
-      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-      raw := raw.push {
-        file := fileStr, line := pos.line, column := pos.column,
-        check := "B2", message := "Type cast annotation '(expr : T)' in proof body"
-      }
+      -- CheckB2: Fix with type annotation
+      let fixInfos := collectFixAnnotationInfos none tree fileLines #[]
+      for (ci, ti) in fixInfos do
+        let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        raw := raw.push {
+          file := fileStr, line := pos.line, column := pos.column,
+          check := "B2", message := "Fix command with explicit type annotation"
+        }
+      -- CheckB2: type-cast ascriptions
+      let ascInfos := collectTypeAscriptionInfos none tree fileLines #[]
+      for (ci, ti) in ascInfos do
+        let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        raw := raw.push {
+          file := fileStr, line := pos.line, column := pos.column,
+          check := "B2", message := "Type cast annotation '(expr : T)' in proof body"
+        }
   -- Deduplicate by (check, line, column) — keeps first occurrence per position.
   -- This prevents macro expansions (e.g. `rfl` → `exact HEq.rfl`) from producing
   -- multiple B1 violations at the same source position.

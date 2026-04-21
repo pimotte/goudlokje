@@ -11,10 +11,17 @@ open Goudlokje
 private def setupTempWorkspace (dir : System.FilePath) : IO (System.FilePath × System.FilePath) := do
   try IO.FS.createDir dir catch _ => pure ()
   let leanFile := dir / "Fixture.lean"
-  -- A two-step proof so that skip-last drops `rfl` (the last step) and
-  -- `decide` finds a shortcut at `show 1+1=2` (the first, non-last step).
+  -- A Verbose two-step proof so that `decide` finds shortcuts at `show` positions.
+  -- Issue #13: shortcuts are only detected in Verbose Lean proofs.
   IO.FS.writeFile leanFile
-    "theorem simple : 1 + 1 = 2 := by\n  show 1 + 1 = 2\n  rfl\n"
+    ("import Verbose.English.All\n" ++
+     "example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by\n" ++
+     "  Let's first prove that 1 + 1 = 2\n" ++
+     "  show 1 + 1 = 2\n" ++
+     "  norm_num\n" ++
+     "  Let's now prove that 2 + 2 = 4\n" ++
+     "  show 2 + 2 = 4\n" ++
+     "  norm_num\n")
   let testJson := dir / "Fixture.test.json"
   -- Ensure any leftover from a previous run is removed.
   try IO.FS.removeFile testJson catch _ => pure ()

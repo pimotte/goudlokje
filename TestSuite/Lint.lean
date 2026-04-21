@@ -51,12 +51,13 @@ def testAllLintChecks : IO Unit := do
   unless b1inB3.isEmpty do
     throw (IO.userError
       s!"testAllLintChecks [B3/B1]: sorry expansion must not produce B1, got {b1inB3.size}")
-  -- Lint the B2 fixture (type annotations)
+  -- B2 does NOT fire on regular (non-Verbose) Lean proofs (tested separately).
+  -- Lint the B2 fixture (Verbose type annotations)
   let b2Results ← lintFile "TestSuite/Fixtures/LintB2.lean" (some cache)
   let b2 := b2Results.filter (·.check == "B2")
   unless b2.size ≥ 1 do
     throw (IO.userError
-      s!"testAllLintChecks [B2]: expected ≥1 B2 violation, got {b2.size}")
+      s!"testAllLintChecks [B2]: expected ≥1 B2 violation in Verbose proof, got {b2.size}")
   -- No two B2 violations at the same position (deduplication works)
   for i in List.range b2.size do
     for j in List.range b2.size do
@@ -125,6 +126,28 @@ def testB2NoFalsePositivesOnVerboseProofs : IO Unit := do
     throw (IO.userError
       s!"testB2NoFalsePositivesOnVerboseProofs: expected 0 B2 violations, got {b2.size}: {msgs}")
 
+/-- B2 must NOT fire on regular (non-Verbose) Lean proofs.
+    Issue #13: all lint checks restricted to Verbose proofs only. -/
+def testB2NotDetectedInNonVerboseProof : IO Unit := do
+  let cache ← mkEnvCache
+  let results ← lintFile "TestSuite/Fixtures/LintNonVerbose.lean" (some cache)
+  let b2 := results.filter (·.check == "B2")
+  unless b2.isEmpty do
+    let msgs := b2.map (fun r => s!"{r.line}:{r.column} {r.message}")
+    throw (IO.userError
+      s!"testB2NotDetectedInNonVerboseProof: expected 0 B2 violations on non-Verbose proof, got {b2.size}: {msgs}")
+
+/-- B3 must NOT fire on regular (non-Verbose) Lean proofs.
+    Issue #13: all lint checks restricted to Verbose proofs only. -/
+def testB3NotDetectedInNonVerboseProof : IO Unit := do
+  let cache ← mkEnvCache
+  let results ← lintFile "TestSuite/Fixtures/LintNonVerbose.lean" (some cache)
+  let b3 := results.filter (·.check == "B3")
+  unless b3.isEmpty do
+    let msgs := b3.map (fun r => s!"{r.line}:{r.column} {r.message}")
+    throw (IO.userError
+      s!"testB3NotDetectedInNonVerboseProof: expected 0 B3 violations on non-Verbose proof, got {b3.size}: {msgs}")
+
 /-- `lintFileIsolated` must produce the same B3 violations as the direct `lintFile` call. -/
 def testLintFileIsolatedMatchesDirectCall : IO Unit := do
   let direct ← lintFile "TestSuite/Fixtures/LintB3.lean" none
@@ -163,6 +186,10 @@ def runAll : IO Unit := do
   IO.println "  ✓ testB1NoFalsePositivesOnVerboseLines"
   testB2NoFalsePositivesOnVerboseProofs
   IO.println "  ✓ testB2NoFalsePositivesOnVerboseProofs"
+  testB2NotDetectedInNonVerboseProof
+  IO.println "  ✓ testB2NotDetectedInNonVerboseProof"
+  testB3NotDetectedInNonVerboseProof
+  IO.println "  ✓ testB3NotDetectedInNonVerboseProof"
   testLintFileIsolatedMatchesDirectCall
   IO.println "  ✓ testLintFileIsolatedMatchesDirectCall"
   testB1AlwaysUnexpectedInClassify
