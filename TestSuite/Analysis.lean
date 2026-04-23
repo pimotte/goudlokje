@@ -5,10 +5,10 @@ namespace TestSuite.Analysis
 open Goudlokje
 
 /-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
-    for trivially decidable goals in the Simple fixture. -/
+    in a Verbose Lean proof.  Issue #13: shortcuts are only reported for Verbose proofs. -/
 def testDetectsDecideShortcut : IO Unit := do
   -- Path is relative to the project root (where Lake runs the executable)
-  let fixturePath : System.FilePath := "TestSuite/Fixtures/Simple.lean"
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/Verbose.lean"
   let results ← analyzeFile fixturePath #["decide"]
   unless results.size ≥ 1 do
     throw (IO.userError
@@ -39,17 +39,16 @@ def testDetectsDecideShortcutInVerboseFile : IO Unit := do
     throw (IO.userError
       "testVerbose: expected tactic 'decide' in results")
 
-/-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
-    inside a Waterproof Genre `#doc` code block. -/
+/-- Integration test: verify that `analyzeFile` does NOT detect shortcuts in a
+    Waterproof `#doc` file with non-Verbose proofs.
+    Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
 def testDetectsDecideShortcutInWaterproofFile : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/Waterproof.lean"
   let results ← analyzeFile fixturePath #["decide"]
-  unless results.size ≥ 1 do
+  unless results.isEmpty do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
     throw (IO.userError
-      s!"testWaterproof: expected ≥1 probe result, got {results.size}")
-  unless results.any (fun r => r.tactic == "decide") do
-    throw (IO.userError
-      "testWaterproof: expected tactic 'decide' in results")
+      s!"testWaterproof: expected 0 shortcuts in non-Verbose Waterproof file, got {results.size} at:{detail}")
 
 /-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
     in a file using both WaterproofGenre `#doc` blocks and Lean Verbose tactics.
@@ -67,7 +66,7 @@ def testDetectsDecideShortcutInVerboseWaterproofFile : IO Unit := do
 /-- Integration test: verify that `analyzeFile` never returns duplicate results.
     The same (file, line, column, tactic) must appear at most once. -/
 def testNoDuplicateResults : IO Unit := do
-  let fixturePath : System.FilePath := "TestSuite/Fixtures/Simple.lean"
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/Verbose.lean"
   let results ← analyzeFile fixturePath #["decide"]
   for i in List.range results.size do
     for j in List.range results.size do
@@ -110,7 +109,7 @@ def testOnProbeCallbackInvoked : IO Unit := do
   let callCount ← IO.mkRef (0 : Nat)
   let callback : Nat → Nat → String → Bool → IO Unit := fun _ _ _ _ =>
     callCount.modify (· + 1)
-  let _ ← analyzeFile "TestSuite/Fixtures/Simple.lean" #["decide"]
+  let _ ← analyzeFile "TestSuite/Fixtures/Verbose.lean" #["decide"]
     (onProbe := some callback)
   let total ← callCount.get
   unless total > 0 do
@@ -124,7 +123,7 @@ def testOnProbeCallbackIncludesFailures : IO Unit := do
   let callback : Nat → Nat → String → Bool → IO Unit := fun _ _ _ _ =>
     callCount.modify (· + 1)
   -- `skip` always leaves the goal unchanged (does not close it)
-  let results ← analyzeFile "TestSuite/Fixtures/Simple.lean" #["skip"]
+  let results ← analyzeFile "TestSuite/Fixtures/Verbose.lean" #["skip"]
     (onProbe := some callback)
   let total ← callCount.get
   -- `skip` never succeeds, so there should be no results
@@ -137,27 +136,25 @@ def testOnProbeCallbackIncludesFailures : IO Unit := do
       s!"testOnProbeCallbackIncludesFailures: expected >0 callbacks for failures, got {total}")
 
 /-- Verbose step filtering must reset per declaration.
-    A declaration WITHOUT step boundaries must keep all its tactics even when
+    A Verbose declaration WITHOUT step boundaries must keep all its tactics even when
     a preceding declaration in the same file DOES have step boundaries.
     Without this, the filter's state leaks across declarations and suppresses
-    shortcuts in non-Verbose exercises. -/
+    shortcuts in Verbose exercises without step boundaries. -/
 def testVerboseFilterRespectsDeclarationBoundaries : IO Unit := do
   let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseMultiDecl.lean"
-  -- Decl 2 (no step boundaries) has `constructor` at line 21.
-  -- Without filter: decide must be found at decl 2's `constructor` (line 21).
   let withoutFilter ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := false)
-  unless withoutFilter.any (fun r => r.line == 21) do
+  let withFilter    ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
+  -- Decl 2 is a Verbose Exercise without step boundaries.
+  -- It must contribute at least 1 shortcut in both filtered and unfiltered results.
+  unless withoutFilter.size ≥ 1 do
     throw (IO.userError
       "testVerboseFilterRespectsDeclarationBoundaries: fixture sanity check failed \
-       — expected decide shortcut at line 21 (constructor, unfiltered)")
-  -- With filter: decl 2 has no step boundaries, so filterVerboseSteps must NOT suppress it.
-  -- (skip-last removes `all_goals norm_num` at line 22 but keeps `constructor` at line 21.)
-  let withFilter ← analyzeFile fixturePath #["decide"] (filterVerboseSteps := true)
-  unless withFilter.any (fun r => r.line == 21) do
+       — expected ≥1 shortcuts (unfiltered)")
+  unless withFilter.size ≥ 1 do
     throw (IO.userError
       "testVerboseFilterRespectsDeclarationBoundaries: filterVerboseSteps incorrectly \
-       suppressed shortcuts in a declaration with no step boundaries (line 21)")
-  -- Sanity: filter still reduces the overall count (decl 1's step filtering works).
+       suppressed all shortcuts (including Decl 2 which has no step boundaries)")
+  -- Filter must reduce overall count because Decl 1's step filtering applies.
   unless withFilter.size < withoutFilter.size do
     throw (IO.userError
       s!"testVerboseFilterRespectsDeclarationBoundaries: expected filter to reduce overall \
@@ -171,7 +168,7 @@ def testOnProbeSuccessCountMatchesResults : IO Unit := do
     if success then successCount.modify (· + 1) else pure ()
   -- Use a single-tactic probe so that each (pos, tactic) is hit at most once per goal.
   -- Deduplication means results.size ≤ successCount (multiple goals at a pos count once).
-  let results ← analyzeFile "TestSuite/Fixtures/Simple.lean" #["decide"]
+  let results ← analyzeFile "TestSuite/Fixtures/Verbose.lean" #["decide"]
     (onProbe := some callback)
   let succs ← successCount.get
   -- Every deduplicated result must have had at least one successful callback
@@ -302,6 +299,17 @@ def testExistentialWitnessNoShortcuts : IO Unit := do
     throw (IO.userError
       s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
 
+/-- Shortcuts must NOT be detected in non-Verbose Lean proofs.
+    Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
+def testShortcutsNotDetectedInNonVerboseFile : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/Simple.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.isEmpty do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testShortcutsNotDetectedInNonVerboseFile: expected 0 shortcuts in non-Verbose file, \
+        got {results.size} at:{detail}")
+
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
   testNoTacticsNoResults;    IO.println "  ✓ testNoTacticsNoResults"
@@ -330,5 +338,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
   testBulletSeenAsStepInVerboseWaterproofFull;
                              IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
+  testShortcutsNotDetectedInNonVerboseFile;
+                             IO.println "  ✓ testShortcutsNotDetectedInNonVerboseFile"
 
 end TestSuite.Analysis

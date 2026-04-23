@@ -159,6 +159,34 @@ partial def processCommandsCollectTrees
   else
     processCommandsCollectTrees ctx newState newAcc
 
+/-- Return true if the tactic syntax kind belongs to the Lean Verbose library.
+    Covers step-boundary tactics, proof wrappers, and other Verbose-specific kinds.
+    Used to determine whether an InfoTree originates from a Verbose Lean proof. -/
+def isVerboseTacticKind (kind : String) : Bool :=
+  kind == "tacticLet'sFirstProveThat_"                             ||
+  kind == "tacticLet'sNowProveThat_"                              ||
+  kind == "tacticLet'sProveThat_Works_"                           ||
+  kind == "tacticLet'sProveThat_"                                 ||
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  kind == "tacticWeCompute_"                                      ||
+  kind == "Verbose.English.withSuggestions"                       ||
+  kind == "Verbose.French.withSuggestions"                        ||
+  kind == "withoutSuggestions"                                    ||
+  kind == "tacticStrg_assumption"
+
+/-- Return true if `tree` contains at least one Verbose tactic node.
+    Used to restrict shortcut detection and lint checks to Verbose Lean proofs only. -/
+partial def treeContainsVerbose (tree : InfoTree) : Bool :=
+  match tree with
+  | .context _ child => treeContainsVerbose child
+  | .node info children =>
+    (match info with
+     | .ofTacticInfo ti => isVerboseTacticKind ti.stx.getKind.toString
+     | _ => false) ||
+    children.any treeContainsVerbose
+  | .hole _ => false
+
 /-- Return true if the tactic is a Lean Verbose step-boundary tactic.
     These tactics introduce a new sub-goal (the "step goal") in a Verbose proof.
     Kind names discovered empirically by inspecting the Verbose English library. -/
@@ -527,24 +555,26 @@ private def analyzeInput
         if filterVerboseSteps then applyVerboseStepFilter allRaw inputCtx.fileMap
         else allRaw
       skipLastPerDeclaration filtered inputCtx.fileMap
-    let mut commandProbeAttempts := 0
-    let mut commandSuccesses := 0
-    for (ci, ti) in tacticInfos do
-      let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
-      for goal in ti.goalsBefore do
-        for tacticStr in probeTactics do
-          commandProbeAttempts := commandProbeAttempts + 1
-          let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
-          if let some cb := onProbe then
-            cb pos.line pos.column tacticStr succeeded
-          if succeeded then
-            commandSuccesses := commandSuccesses + 1
-            results := results.push {
-              file   := displayPath.toString
-              line   := pos.line
-              column := pos.column
-              tactic := tacticStr
-            }
+    -- Only probe Verbose Lean proofs; skip commands with no Verbose tactics.
+    if resolvedTrees.any treeContainsVerbose then
+      let mut commandProbeAttempts := 0
+      let mut commandSuccesses := 0
+      for (ci, ti) in tacticInfos do
+        let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        for goal in ti.goalsBefore do
+          for tacticStr in probeTactics do
+            commandProbeAttempts := commandProbeAttempts + 1
+            let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
+            if let some cb := onProbe then
+              cb pos.line pos.column tacticStr succeeded
+            if succeeded then
+              commandSuccesses := commandSuccesses + 1
+              results := results.push {
+                file   := displayPath.toString
+                line   := pos.line
+                column := pos.column
+                tactic := tacticStr
+              }
     state := newState
     done := isDone
     cmdIdx := cmdIdx + 1
