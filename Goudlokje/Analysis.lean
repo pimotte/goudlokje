@@ -12,11 +12,40 @@ open Lean Elab Meta
 
 /-- A position in a source file where a probe tactic succeeded. -/
 structure ProbeResult where
-  file   : String
-  line   : Nat
-  column : Nat
-  tactic : String
+  file        : String
+  line        : Nat
+  column      : Nat
+  exercise    : String
+  lineInProof : Nat
+  tactic      : String
   deriving Repr, BEq, Inhabited, ToJson, FromJson
+
+/-- Scan backwards in `input` from `proofStartLine` (1-based) for a Verbose
+    `Exercise "…"` or `Example "…"` declaration and return the quoted name.
+    Falls back to "example" if none is found within 30 lines or if a
+    new declaration boundary (theorem/lemma/def/…) is encountered first. -/
+private def findExerciseName (input : String) (proofStartLine : Nat) : String :=
+  let lines := (input.splitOn "\n").toArray
+  let upper := min proofStartLine lines.size
+  let lower := if upper > 30 then upper - 30 else 0
+  let range := (List.range (upper - lower)).map (fun k => upper - 1 - k)
+  let stopPrefixes : List String :=
+    ["theorem ", "lemma ", "def ", "noncomputable ", "example ", "abbrev "]
+  let (result, _) := range.foldl (fun (name, stop) idx =>
+    if stop then (name, stop)
+    else
+      let line := (lines[idx]? |>.getD "").trimAscii.toString
+      if stopPrefixes.any (fun p => line.startsWith p) then ("example", true)
+      else if line.startsWith "Exercise \"" || line.startsWith "Example \"" then
+        let after : String :=
+          if line.startsWith "Exercise \"" then (line.drop "Exercise \"".length).toString
+          else (line.drop "Example \"".length).toString
+        match after.splitOn "\"" with
+        | name :: _ => (name, true)
+        | []        => ("example", true)
+      else (name, false))
+    ("example", false)
+  result
 
 /-- Return true if this `TacticInfo` is a synthetic container or proof-scaffolding
     tactic that does not correspond to a user-written proof step.
@@ -514,11 +543,15 @@ private def extractLeanFenceOverlay? (input : String) : Option String :=
     none
 
 /-- Analyse a single Lean input string, returning every (position, tactic) pair
-    where a probe tactic succeeds. -/
+    where a probe tactic succeeds.
+    `originalSource`, when provided, is used by `findExerciseName` to recover
+    Verbose exercise names from lines that may have been blanked in `input`
+    (e.g. when `input` is a fence-overlay from `extractLeanFenceOverlay?`). -/
 private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
-    (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none) :
+    (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
+    (originalSource : Option String := none) :
     IO (Array ProbeResult) := do
   let opts  := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input displayPath.toString
@@ -531,6 +564,7 @@ private def analyzeInput
     cmdPos       := 0
   }
   let ctx : Frontend.Context := { inputCtx }
+  let sourceForNames := originalSource.getD input
   let mut results : Array ProbeResult := #[]
   let mut state := initState
   let mut done := false
@@ -559,8 +593,24 @@ private def analyzeInput
     if resolvedTrees.any treeContainsVerbose then
       let mut commandProbeAttempts := 0
       let mut commandSuccesses := 0
+      -- Track the current declaration group to compute proof-relative line numbers.
+      -- `tacticInfos` is sorted by source position after the filter pipeline, so
+      -- the first tactic seen for each group gives the proof start line.
+      let mut currentDecl : Option Name := none
+      let mut proofStartLine : Nat := 1
+      let mut exerciseName : String := "example"
+      let mut groupSeen : Bool := false
       for (ci, ti) in tacticInfos do
         let pos := ci.fileMap.toPosition (ti.stx.getPos?.getD 0)
+        let decl := ci.parentDecl?
+        if !groupSeen || decl != currentDecl then
+          currentDecl := decl
+          proofStartLine := pos.line
+          groupSeen := true
+          exerciseName := match decl with
+            | some name => name.toString
+            | none      => findExerciseName sourceForNames pos.line
+        let lineInProof := pos.line - proofStartLine + 1
         for goal in ti.goalsBefore do
           for tacticStr in probeTactics do
             commandProbeAttempts := commandProbeAttempts + 1
@@ -570,10 +620,12 @@ private def analyzeInput
             if succeeded then
               commandSuccesses := commandSuccesses + 1
               results := results.push {
-                file   := displayPath.toString
-                line   := pos.line
-                column := pos.column
-                tactic := tacticStr
+                file        := displayPath.toString
+                line        := pos.line
+                column      := pos.column
+                exercise    := exerciseName
+                lineInProof := lineInProof
+                tactic      := tacticStr
               }
     state := newState
     done := isDone
@@ -627,7 +679,8 @@ def analyzeFile
   let directResults ← analyzeInput filePath input probeTactics filterVerboseSteps (onProbe := onProbe)
   let merged ← match extractLeanFenceOverlay? input with
     | some overlay =>
-      let overlayResults ← analyzeInput filePath overlay probeTactics filterVerboseSteps (onProbe := onProbe)
+      let overlayResults ← analyzeInput filePath overlay probeTactics filterVerboseSteps
+        (onProbe := onProbe) (originalSource := input)
       pure (directResults ++ overlayResults)
     | none =>
       pure directResults

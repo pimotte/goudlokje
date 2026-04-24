@@ -5,10 +5,9 @@ namespace Goudlokje
 
 /-- A shortcut recorded as expected in the `.test.json` companion file. -/
 structure ExpectedShortcut where
-  file   : String
-  line   : Nat
-  column : Nat
-  tactic : String
+  exercise    : String
+  lineInProof : Nat
+  tactic      : String
   deriving Repr, BEq, Inhabited
 
 /-- A lint violation documented as expected (suppressed) in the `.test.json` companion file. -/
@@ -29,18 +28,16 @@ structure TestFile where
 instance : Lean.FromJson ExpectedShortcut where
   fromJson? json := do
     return {
-      file   := ← Lean.fromJson? (← json.getObjVal? "file")
-      line   := ← Lean.fromJson? (← json.getObjVal? "line")
-      column := ← Lean.fromJson? (← json.getObjVal? "column")
-      tactic := ← Lean.fromJson? (← json.getObjVal? "tactic")
+      exercise    := ← Lean.fromJson? (← json.getObjVal? "exercise")
+      lineInProof := ← Lean.fromJson? (← json.getObjVal? "lineInProof")
+      tactic      := ← Lean.fromJson? (← json.getObjVal? "tactic")
     }
 
 instance : Lean.ToJson ExpectedShortcut where
   toJson s := Lean.Json.mkObj [
-    ("file",   Lean.toJson s.file),
-    ("line",   Lean.toJson s.line),
-    ("column", Lean.toJson s.column),
-    ("tactic", Lean.toJson s.tactic)
+    ("exercise",    Lean.toJson s.exercise),
+    ("lineInProof", Lean.toJson s.lineInProof),
+    ("tactic",      Lean.toJson s.tactic)
   ]
 
 instance : Lean.FromJson ExpectedLintViolation where
