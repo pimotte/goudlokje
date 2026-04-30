@@ -60,6 +60,15 @@ def testParseJsonNoLintField : IO Unit := do
   let tf ← IO.ofExcept (Lean.fromJson? (α := TestFile) json)
   assertEq 0 tf.lint.size "testParseJsonNoLintField"
 
+def testLoadOldFormatTestFile : IO Unit := do
+  -- Pre-Issue-9 test files used {file, line, column, tactic} instead of {exercise, lineInProof, tactic}.
+  -- Loading such a file should NOT crash; it should be treated as empty (no expected shortcuts).
+  let oldFormatJson := "{\"expected\":[{\"file\":\"foo.lean\",\"line\":5,\"column\":10,\"tactic\":\"ring\"}]}"
+  let path : System.FilePath := "/tmp/goudlokje_old_format_test.test.json"
+  IO.FS.writeFile path oldFormatJson
+  let tf ← TestFile.load path
+  assertEq 0 tf.expected.size "testLoadOldFormat: should return empty for old-format file"
+
 def runAll : IO Unit := do
   testRoundTripEmpty;              IO.println "  ✓ testRoundTripEmpty"
   testRoundTripSingle;             IO.println "  ✓ testRoundTripSingle"
@@ -68,5 +77,6 @@ def runAll : IO Unit := do
   testLoadMissingFileReturnsEmpty; IO.println "  ✓ testLoadMissingFileReturnsEmpty"
   testRoundTripLint;               IO.println "  ✓ testRoundTripLint"
   testParseJsonNoLintField;        IO.println "  ✓ testParseJsonNoLintField"
+  testLoadOldFormatTestFile;       IO.println "  ✓ testLoadOldFormatTestFile"
 
 end TestSuite.TestFile

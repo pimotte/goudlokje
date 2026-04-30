@@ -74,12 +74,27 @@ instance : Lean.ToJson TestFile where
     ("lint",     Lean.toJson tf.lint)
   ]
 
-/-- Load a TestFile; returns an empty TestFile if the file does not exist. -/
+/-- Load a TestFile; returns an empty TestFile if the file does not exist.
+    Old-format files (pre-Issue-9, with file/line/column keys) are detected and
+    treated as empty — a warning is printed and the file is ignored so that the
+    rest of the check run can continue. -/
 def TestFile.load (path : System.FilePath) : IO TestFile := do
   if !(← path.pathExists) then return { expected := #[] }
   let contents ← IO.FS.readFile path
   let json ← IO.ofExcept (Lean.Json.parse contents)
-  IO.ofExcept (Lean.fromJson? json)
+  match Lean.fromJson? (α := TestFile) json with
+  | .ok tf => return tf
+  | .error e =>
+    let isOldFormat : Bool :=
+      match json.getObjVal? "expected" with
+      | .ok (Lean.Json.arr items) =>
+          items.any fun item => (item.getObjVal? "file").isOk && (item.getObjVal? "line").isOk
+      | _ => false
+    if isOldFormat then
+      IO.eprintln s!"Warning: {path} uses old test file format; run `lake exe goudlokje update` to regenerate."
+      return { expected := #[] }
+    else
+      throw (IO.userError e)
 
 /-- Persist a TestFile to disk as pretty-printed JSON. -/
 def TestFile.save (tf : TestFile) (path : System.FilePath) : IO Unit :=
