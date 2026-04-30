@@ -24,7 +24,7 @@ structure ClassificationResult where
 /-- Classify probe results against expected shortcuts in the test file. -/
 def classify (found : Array ProbeResult) (tf : TestFile) : ClassificationResult :=
   let matchesEntry (r : ProbeResult) (e : ExpectedShortcut) : Bool :=
-    e.file == r.file && e.line == r.line && e.column == r.column && e.tactic == r.tactic
+    e.exercise == r.exercise && e.lineInProof == r.lineInProof && e.tactic == r.tactic
   let shortcuts := found.map fun r =>
     if tf.expected.any (matchesEntry r) then .expected r else .unexpected r
   let stale := tf.expected.filterMap fun e =>
@@ -36,12 +36,12 @@ def classify (found : Array ProbeResult) (tf : TestFile) : ClassificationResult 
 def printShortcutResult (r : ShortcutResult) : IO Unit :=
   match r with
   | .unexpected p =>
-    IO.eprintln s!"ERROR: unexpected shortcut at {p.file}:{p.line}:{p.column} — tactic `{p.tactic}` closes the goal"
+    IO.eprintln s!"ERROR: unexpected shortcut [{p.exercise}:{p.lineInProof}] in {p.file} — tactic `{p.tactic}` closes the goal"
   | .expected p =>
-    IO.println s!"OK: expected shortcut at {p.file}:{p.line}:{p.column} — tactic `{p.tactic}`"
+    IO.println s!"OK: expected shortcut [{p.exercise}:{p.lineInProof}] — tactic `{p.tactic}`"
 
 /-- Pretty-print a stale entry warning to stdout. -/
 def printStaleEntry (s : StaleEntry) : IO Unit :=
-  IO.eprintln s!"WARN: stale entry in test file — {s.entry.file}:{s.entry.line}:{s.entry.column} tactic `{s.entry.tactic}` no longer closes the goal"
+  IO.eprintln s!"WARN: stale entry in test file — [{s.entry.exercise}:{s.entry.lineInProof}] tactic `{s.entry.tactic}` no longer closes the goal"
 
 end Goudlokje

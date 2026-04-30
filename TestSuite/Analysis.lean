@@ -75,7 +75,7 @@ def testNoDuplicateResults : IO Unit := do
         let rj := results[j]!
         if ri == rj then
           throw (IO.userError
-            s!"testNoDuplicateResults: duplicate at {ri.file}:{ri.line}:{ri.column} — `{ri.tactic}`")
+            s!"testNoDuplicateResults: duplicate [{ri.exercise}:{ri.lineInProof}] — `{ri.tactic}`")
 
 /-- Verbose step filtering: without filtering, `decide` is a shortcut at both
     the `show` (noop) and `norm_num` positions within each step body.
