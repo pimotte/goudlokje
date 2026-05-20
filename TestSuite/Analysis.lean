@@ -299,6 +299,20 @@ def testExistentialWitnessNoShortcuts : IO Unit := do
     throw (IO.userError
       s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
 
+/-- Integration test: a two-step `Since…we get` + `Since…we conclude` exercise
+    inside a Waterproof multilean input block has exactly 1 probe point.
+    `skipLastPerDeclaration` drops the final `Since p ∧ q we conclude that q`,
+    leaving only the first position where `Since (p ∧ q) ∧ r we conclude that q`
+    closes the goal directly — a genuine shortcut. -/
+def testSinceGetExerciseHasOneProbePoint : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofSince.lean"
+  let results ← analyzeFile fixturePath #["Since (p ∧ q) ∧ r we conclude that q"]
+  unless results.size == 1 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testSinceGetExercise: expected exactly 1 probe point (last Since…conclude skipped), \
+        got {results.size} at:{detail}")
+
 /-- Shortcuts must NOT be detected in non-Verbose Lean proofs.
     Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
 def testShortcutsNotDetectedInNonVerboseFile : IO Unit := do
@@ -336,6 +350,8 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testSinceGetExerciseHasOneProbePoint;
+                             IO.println "  ✓ testSinceGetExerciseHasOneProbePoint"
   testBulletSeenAsStepInVerboseWaterproofFull;
                              IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
   testShortcutsNotDetectedInNonVerboseFile;
