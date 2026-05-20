@@ -690,11 +690,11 @@ def analyzeFile
   let inputAreas := parseInputAreas input
   match inputAreas with
   | none =>
-    -- No `:::input` markers → process normally (no input area filtering)
-    analyzeInput filePath input probeTactics filterVerboseSteps (onProbe := onProbe)
+    -- No `:::input` markers → no student input areas → nothing to check
+    return #[]
   | some ranges =>
     if ranges.isEmpty then
-      -- Has `:::input` markers but all blocks are empty → skip
+      -- Has `:::input` markers but all blocks are empty → nothing to check
       return #[]
     else
       analyzeInput filePath input probeTactics filterVerboseSteps

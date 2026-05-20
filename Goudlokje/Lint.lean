@@ -354,14 +354,14 @@ def lintFile
   -- Deduplicate by (check, line, column) — keeps first occurrence per position.
   -- This prevents macro expansions (e.g. `rfl` → `exact HEq.rfl`) from producing
   -- multiple B1 violations at the same source position.
-  -- Filter to input areas: only when `::::` markers with `:::input` areas exist.
+  -- Filter to input areas: only check within :::input areas; skip if none present.
   let inputAreas := parseInputAreas input
-  let rawResults := match inputAreas with
-    | none => raw
+  let filtered ← match inputAreas with
+    | none => return #[]
     | some ranges =>
-      if ranges.isEmpty then raw
-      else raw.filter (fun r => isInInputArea r.line ranges)
-  return rawResults.foldl (fun acc r =>
+      if ranges.isEmpty then return #[]
+      else pure (raw.filter (fun r => isInInputArea r.line ranges))
+  return filtered.foldl (fun acc r =>
     if acc.any (fun e => e.check == r.check && e.line == r.line && e.column == r.column)
     then acc
     else acc.push r) #[]

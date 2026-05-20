@@ -70,6 +70,8 @@ private def runTestInProcess (suite testName : String) : IO UInt32 := do
     TestSuite.Analysis.testExistentialWitnessNoShortcuts; return 0
   | "Analysis", "testInputAreaScoping" =>
     TestSuite.Analysis.testInputAreaScoping; return 0
+  | "Analysis", "testNoInputAreasNoShortcuts" =>
+    TestSuite.Analysis.testNoInputAreasNoShortcuts; return 0
   | "Check", "testCheckNonZeroForUnexpectedShortcuts" =>
     TestSuite.Check.testCheckNonZeroForUnexpectedShortcuts; return 0
   | "Check", "testCheckZeroWithEmptyTactics" =>
@@ -158,6 +160,7 @@ private def analysisTests : Array IntTestSpec := #[
   { suite := "Analysis", name := "testNestedDiscussNoShortcuts" },
   { suite := "Analysis", name := "testExistentialWitnessNoShortcuts" },
   { suite := "Analysis", name := "testInputAreaScoping" },
+  { suite := "Analysis", name := "testNoInputAreasNoShortcuts" },
 ]
 
 private def checkTests : Array IntTestSpec := #[

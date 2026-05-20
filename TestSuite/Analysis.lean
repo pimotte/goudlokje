@@ -51,10 +51,11 @@ def testDetectsDecideShortcutInWaterproofFile : IO Unit := do
       s!"testWaterproof: expected 0 shortcuts in non-Verbose Waterproof file, got {results.size} at:{detail}")
 
 /-- Integration test: verify that `analyzeFile` detects `decide` as a shortcut
-    in a file using both WaterproofGenre `#doc` blocks and Lean Verbose tactics.
+    in a file using both WaterproofGenre `#doc` blocks and Lean Verbose tactics
+    with `:::input` areas.
     This combination is the typical usage in external Waterproof exercise projects. -/
 def testDetectsDecideShortcutInVerboseWaterproofFile : IO Unit := do
-  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproof.lean"
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofInputArea.lean"
   let results ← analyzeFile fixturePath #["decide"]
   unless results.size ≥ 1 do
     throw (IO.userError
@@ -333,6 +334,18 @@ def testSinceGetExerciseHasOneProbePoint : IO Unit := do
     throw (IO.userError
       s!"testSinceGetExercise: expected exercise name \"1.1.13\", got \"{r.exercise}\"")
 
+/-- A file with no :::input markers produces no shortcuts, even when it contains
+    Verbose proofs with detectable shortcuts.
+    Without student input areas, there is nothing to check. -/
+def testNoInputAreasNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproof.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.isEmpty do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testNoInputAreasNoShortcuts: expected 0 results for file with no :::input areas, \
+        got {results.size} at:{detail}")
+
 /-- Shortcuts must NOT be detected in non-Verbose Lean proofs.
     Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
 def testShortcutsNotDetectedInNonVerboseFile : IO Unit := do
@@ -376,6 +389,8 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
   testInputAreaScoping;
                              IO.println "  ✓ testInputAreaScoping"
+  testNoInputAreasNoShortcuts;
+                             IO.println "  ✓ testNoInputAreasNoShortcuts"
   testShortcutsNotDetectedInNonVerboseFile;
                              IO.println "  ✓ testShortcutsNotDetectedInNonVerboseFile"
 
