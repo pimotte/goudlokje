@@ -546,77 +546,14 @@ def classifyTacticKinds (filePath : System.FilePath) :
   let sorted := kindMap.toList.mergeSort (fun (a, _) (b, _) => a < b)
   return sorted.toArray
 
-/-- Keep only lines that are meaningful Lean context outside fenced `lean` blocks.
-    This is used as a fallback for Verso/Waterproof `#doc` sources where the
-    fenced code is no longer elaborated as ordinary top-level commands. -/
-private def keepOutsideLeanFenceLine (line : String) : Bool :=
-  let trimmed := line.trimAscii.toString
-  trimmed.isEmpty ||
-  trimmed.startsWith "--" ||
-  trimmed.startsWith "/-" ||
-  trimmed.startsWith "-/" ||
-  trimmed.startsWith "import " ||
-  trimmed.startsWith "open " ||
-  trimmed.startsWith "namespace " ||
-  trimmed.startsWith "section " ||
-  trimmed.startsWith "end " ||
-  trimmed.startsWith "set_option "
-
-/-- Overlay produced by `extractLeanFenceOverlay?`.
-    The `overlay` string has the same line count as the original (blank lines replace
-    non-meaningful content) so source positions are preserved. -/
-private structure FenceOverlay where
-  overlay : String
-  deriving ToJson, FromJson
-
-/-- Build an overlay source that preserves imports/preamble outside fenced blocks
-    and keeps only the contents of fenced `lean` blocks. All other lines are
-    replaced by blanks so source positions still line up with the original file.
-    Fence markers (````lean`, `````), `::::` markers, and `:::` / `:::input` markers
-    are blanked so the overlay is valid Lean syntax. -/
-private def extractLeanFenceOverlay? (input : String) : Option FenceOverlay :=
-  let (linesRev, _inFence, sawFence, keptLean) :=
-    (input.splitOn "\n").foldl
-      (fun (acc : List String × Bool × Bool × Bool) line =>
-        let (linesRev, inFence, sawFence, keptLean) := acc
-        let trimmed := line.trimAscii.toString
-        if inFence then
-          if trimmed == "```" then
-            -- Blank out the closing fence marker
-            ("" :: linesRev, false, sawFence, keptLean)
-          else
-            -- Keep content inside fences (exercises, tactics, etc.)
-            (line :: linesRev, true, sawFence, keptLean || !trimmed.isEmpty)
-        else if trimmed.startsWith "```lean" then
-          -- Blank out the opening fence marker
-          ("" :: linesRev, true, true, keptLean)
-        else if trimmed.startsWith "::::" then
-          -- Blank out `::::` multi-language fence markers
-          ("" :: linesRev, false, sawFence, keptLean)
-        else if trimmed == ":::" || trimmed == ":::input" then
-          -- Blank out `:::` / `:::input` markers
-          ("" :: linesRev, false, sawFence, keptLean)
-        else
-          let kept := if keepOutsideLeanFenceLine line then line else ""
-          (kept :: linesRev, false, sawFence, keptLean))
-      ([], false, false, false)
-  if sawFence && keptLean then
-    some { overlay := "\n".intercalate linesRev.reverse }
-  else
-    none
-
 /-- Analyse a single Lean input string, returning every (position, tactic) pair
     where a probe tactic succeeds.
-    `originalSource`, when provided, is used by `findExerciseName` to recover
-    Verbose exercise names from lines that may have been blanked in `input`
-    (e.g. when `input` is a fence-overlay from `extractLeanFenceOverlay?`).
     `inputAreaRanges`, if provided, restricts probing to lines inside Waterproof
     Genre `:::input` blocks. -/
 private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
     (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
-    (originalSource : Option String := none)
     (inputAreaRanges : Option (List (Nat × Nat)) := none) :
     IO (Array ProbeResult) := do
   let opts  := Elab.async.set Options.empty false
@@ -630,7 +567,7 @@ private def analyzeInput
     cmdPos       := 0
   }
   let ctx : Frontend.Context := { inputCtx }
-  let sourceForNames := originalSource.getD input
+  let sourceForNames := input
   let mut results : Array ProbeResult := #[]
   let mut state := initState
   let mut done := false
@@ -751,47 +688,27 @@ def analyzeFile
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
   let inputAreas := parseInputAreas input
-  let directResults ← match inputAreas with
-    | none =>
-      -- No `::::` fence markers → process normally (no input area filtering)
+  match inputAreas with
+  | none =>
+    -- No `:::input` markers → process normally (no input area filtering)
+    analyzeInput filePath input probeTactics filterVerboseSteps (onProbe := onProbe)
+  | some ranges =>
+    if ranges.isEmpty then
+      -- Has `:::input` markers but all blocks are empty → skip
+      return #[]
+    else
       analyzeInput filePath input probeTactics filterVerboseSteps
-        (onProbe := onProbe)
-    | some ranges =>
-      if ranges.isEmpty then
-        -- Has `::::` markers but no `:::` input areas → skip
-        return #[]
-      else
-        analyzeInput filePath input probeTactics filterVerboseSteps
-          (onProbe := onProbe) (inputAreaRanges := some ranges)
-  let merged ← match extractLeanFenceOverlay? input with
-    | some overlay =>
-      let overlayResults ← match inputAreas with
-        | none =>
-          analyzeInput filePath overlay.overlay probeTactics filterVerboseSteps
-            (onProbe := onProbe) (originalSource := input)
-        | some ranges =>
-          if ranges.isEmpty then return #[]
-          else
-            analyzeInput filePath overlay.overlay probeTactics filterVerboseSteps
-              (onProbe := onProbe) (originalSource := input) (inputAreaRanges := some ranges)
-      pure (directResults ++ overlayResults)
-    | none =>
-      pure directResults
-  return merged.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
+        (onProbe := onProbe) (inputAreaRanges := some ranges)
 
 /-- Debug utility: run the filter pipeline on `filePath` and return a human-readable
     log showing, for each command, the raw tactic positions, positions after
-    `applyVerboseStepFilter`, and positions after `skipLastPerDeclaration`.
-    Operates on the fence-overlay (same path as `analyzeFile`). -/
+    `applyVerboseStepFilter`, and positions after `skipLastPerDeclaration`. -/
 def dumpFilterStages (filePath : System.FilePath) : IO String := do
   Lean.initSearchPath (← Lean.findSysroot)
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let src := match extractLeanFenceOverlay? input with
-    | some o => o.overlay
-    | none   => input
   let opts := Elab.async.set Options.empty false
-  let inputCtx := Parser.mkInputContext src filePath.toString
+  let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, _) ← Parser.parseHeader inputCtx
   let (env, _) ← processHeader header opts {} inputCtx
   let initCmdState := Command.mkState env {} opts
