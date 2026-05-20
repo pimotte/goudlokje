@@ -1,33 +1,26 @@
--- Fixture for testing input area scoping in Waterproof files.
--- Shortcut inside the :::input block is detected; shortcut outside is not.
-import WaterproofGenre
+-- Fixture for testing input area scoping.
+-- Shortcuts inside :::input are detected; shortcuts outside are not.
 import Verbose.English.All
-open WaterproofGenre
 
-::::multilean
-```lean
--- Fixture for testing input area scoping in Waterproof files.
--- Shortcut inside the :::input block is detected; shortcut outside is not.
+open Verbose English
 
 set_option linter.unusedTactic false
 
--- This proof is OUTSIDE the input area: shortcuts should NOT be detected.
-example : True ∧ True := by
-  Let's first prove that True
-  decide
-  Let's now prove that True
-  decide
-```
+::::multilean
 :::input
+```lean
 -- This proof is INSIDE the input area: shortcuts SHOULD be detected.
+
+set_option linter.unusedTactic false
+
 Exercise "inside-area"
-  Given: ()
-  Conclusion: True ∧ True
+  Given: (dummy : Nat)
+  Assume: (h : 0 = 0)
+  Conclusion: 1 + 1 = 2
 Proof:
-  Let's first prove that True
-  decide
-  Let's now prove that True
-  decide
+  show 1 + 1 = 2   -- noop; `decide` closes goal here (not last → shortcut)
+  norm_num          -- closes the goal; last → skip
 QED
+```
 :::
 ::::
