@@ -47,6 +47,51 @@ private def findExerciseName (input : String) (proofStartLine : Nat) : String :=
     ("example", false)
   result
 
+/-- Check whether `line` (1-based) falls within any of the given input area ranges. -/
+def isInInputArea (line : Nat) (ranges : List (Nat × Nat)) : Bool :=
+  ranges.any (fun (start, e) => start ≤ line && line ≤ e)
+
+/-- Parse `:::input` / `:::` markers, returning (startLine, endLine) ranges (1-based,
+    inclusive) defining student input areas.
+    Returns `none` if no `:::input` markers are present (no input area filtering needed).
+    Returns `some ranges` otherwise; ranges may be empty if all `:::input` blocks were empty.
+
+    Respects ```lean fence boundaries: markers inside a fence are ignored (student code). -/
+def parseInputAreas (input : String) : Option (List (Nat × Nat)) :=
+  let lines := input.splitOn "\n"
+  let hasInput := lines.any (fun l => l.trimAscii == ":::input")
+  if !hasInput then none
+  else
+    let (rangesRev, _, currentStart, _) :=
+      lines.foldl
+        (fun (acc : List (Nat × Nat) × Bool × Nat × Nat) (line : String) =>
+          let (rangesRev, inFence, currentStart, idx) := acc
+          let trimmed := line.trimAscii.toString
+          if inFence then
+            if trimmed == "```" then
+              (rangesRev, false, currentStart, idx + 1)
+            else
+              (rangesRev, true, currentStart, idx + 1)
+          else if trimmed.startsWith "```lean" then
+            (rangesRev, true, currentStart, idx + 1)
+          else if trimmed == ":::input" then
+            (rangesRev, false, idx + 1, idx + 1)  -- 1-based line number
+          else if trimmed == ":::" then
+            if currentStart > 0 then
+              ((currentStart, idx) :: rangesRev, false, 0, idx + 1)
+            else
+              (rangesRev, false, 0, idx + 1)
+          else
+            (rangesRev, inFence, currentStart, idx + 1))
+        ([], false, 0, 0)
+    -- If still in an input block at EOF, close at last line
+    let finalRanges :=
+      if currentStart > 0 then
+        (currentStart, lines.length) :: rangesRev
+      else
+        rangesRev
+    some finalRanges.reverse
+
 /-- Return true if this `TacticInfo` is a synthetic container or proof-scaffolding
     tactic that does not correspond to a user-written proof step.
 
@@ -517,10 +562,19 @@ private def keepOutsideLeanFenceLine (line : String) : Bool :=
   trimmed.startsWith "end " ||
   trimmed.startsWith "set_option "
 
+/-- Overlay produced by `extractLeanFenceOverlay?`.
+    The `overlay` string has the same line count as the original (blank lines replace
+    non-meaningful content) so source positions are preserved. -/
+private structure FenceOverlay where
+  overlay : String
+  deriving ToJson, FromJson
+
 /-- Build an overlay source that preserves imports/preamble outside fenced blocks
     and keeps only the contents of fenced `lean` blocks. All other lines are
-    replaced by blanks so source positions still line up with the original file. -/
-private def extractLeanFenceOverlay? (input : String) : Option String :=
+    replaced by blanks so source positions still line up with the original file.
+    Fence markers (````lean`, `````), `::::` markers, and `:::` / `:::input` markers
+    are blanked so the overlay is valid Lean syntax. -/
+private def extractLeanFenceOverlay? (input : String) : Option FenceOverlay :=
   let (linesRev, _inFence, sawFence, keptLean) :=
     (input.splitOn "\n").foldl
       (fun (acc : List String × Bool × Bool × Bool) line =>
@@ -528,17 +582,26 @@ private def extractLeanFenceOverlay? (input : String) : Option String :=
         let trimmed := line.trimAscii.toString
         if inFence then
           if trimmed == "```" then
+            -- Blank out the closing fence marker
             ("" :: linesRev, false, sawFence, keptLean)
           else
+            -- Keep content inside fences (exercises, tactics, etc.)
             (line :: linesRev, true, sawFence, keptLean || !trimmed.isEmpty)
         else if trimmed.startsWith "```lean" then
+          -- Blank out the opening fence marker
           ("" :: linesRev, true, true, keptLean)
+        else if trimmed.startsWith "::::" then
+          -- Blank out `::::` multi-language fence markers
+          ("" :: linesRev, false, sawFence, keptLean)
+        else if trimmed == ":::" || trimmed == ":::input" then
+          -- Blank out `:::` / `:::input` markers
+          ("" :: linesRev, false, sawFence, keptLean)
         else
           let kept := if keepOutsideLeanFenceLine line then line else ""
           (kept :: linesRev, false, sawFence, keptLean))
       ([], false, false, false)
   if sawFence && keptLean then
-    some ("\n".intercalate linesRev.reverse)
+    some { overlay := "\n".intercalate linesRev.reverse }
   else
     none
 
@@ -546,12 +609,15 @@ private def extractLeanFenceOverlay? (input : String) : Option String :=
     where a probe tactic succeeds.
     `originalSource`, when provided, is used by `findExerciseName` to recover
     Verbose exercise names from lines that may have been blanked in `input`
-    (e.g. when `input` is a fence-overlay from `extractLeanFenceOverlay?`). -/
+    (e.g. when `input` is a fence-overlay from `extractLeanFenceOverlay?`).
+    `inputAreaRanges`, if provided, restricts probing to lines inside Waterproof
+    Genre `:::input` blocks. -/
 private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
     (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
-    (originalSource : Option String := none) :
+    (originalSource : Option String := none)
+    (inputAreaRanges : Option (List (Nat × Nat)) := none) :
     IO (Array ProbeResult) := do
   let opts  := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input displayPath.toString
@@ -621,15 +687,20 @@ private def analyzeInput
             if let some cb := onProbe then
               cb pos.line pos.column tacticStr succeeded
             if succeeded then
-              commandSuccesses := commandSuccesses + 1
-              results := results.push {
-                file        := displayPath.toString
-                line        := pos.line
-                column      := pos.column
-                exercise    := exerciseName
-                lineInProof := lineInProof
-                tactic      := tacticStr
-              }
+              -- Only record if inside input area (when ranges are provided)
+              let withinInput := match inputAreaRanges with
+                | some ranges => isInInputArea pos.line ranges
+                | none       => true
+              if withinInput then
+                commandSuccesses := commandSuccesses + 1
+                results := results.push {
+                  file        := displayPath.toString
+                  line        := pos.line
+                  column      := pos.column
+                  exercise    := exerciseName
+                  lineInProof := lineInProof
+                  tactic      := tacticStr
+                }
     state := newState
     done := isDone
     cmdIdx := cmdIdx + 1
@@ -679,11 +750,30 @@ def analyzeFile
   -- Allow [init] declarations to be executed when importing modules
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let directResults ← analyzeInput filePath input probeTactics filterVerboseSteps (onProbe := onProbe)
+  let inputAreas := parseInputAreas input
+  let directResults ← match inputAreas with
+    | none =>
+      -- No `::::` fence markers → process normally (no input area filtering)
+      analyzeInput filePath input probeTactics filterVerboseSteps
+        (onProbe := onProbe)
+    | some ranges =>
+      if ranges.isEmpty then
+        -- Has `::::` markers but no `:::` input areas → skip
+        return #[]
+      else
+        analyzeInput filePath input probeTactics filterVerboseSteps
+          (onProbe := onProbe) (inputAreaRanges := some ranges)
   let merged ← match extractLeanFenceOverlay? input with
     | some overlay =>
-      let overlayResults ← analyzeInput filePath overlay probeTactics filterVerboseSteps
-        (onProbe := onProbe) (originalSource := input)
+      let overlayResults ← match inputAreas with
+        | none =>
+          analyzeInput filePath overlay.overlay probeTactics filterVerboseSteps
+            (onProbe := onProbe) (originalSource := input)
+        | some ranges =>
+          if ranges.isEmpty then return #[]
+          else
+            analyzeInput filePath overlay.overlay probeTactics filterVerboseSteps
+              (onProbe := onProbe) (originalSource := input) (inputAreaRanges := some ranges)
       pure (directResults ++ overlayResults)
     | none =>
       pure directResults
@@ -697,7 +787,9 @@ def dumpFilterStages (filePath : System.FilePath) : IO String := do
   Lean.initSearchPath (← Lean.findSysroot)
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let src := (extractLeanFenceOverlay? input).getD input
+  let src := match extractLeanFenceOverlay? input with
+    | some o => o.overlay
+    | none   => input
   let opts := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext src filePath.toString
   let (header, parserState, _) ← Parser.parseHeader inputCtx

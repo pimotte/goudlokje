@@ -1,6 +1,12 @@
 -- Fixture file for Goudlokje integration tests.
 -- This file contains proofs that are intentionally shortcuttable by `decide`.
 -- It imports nothing beyond the core Lean 4 prelude.
+::::multilean
+:::input
+```lean
+-- Fixture file for Goudlokje integration tests.
+-- This file contains proofs that are intentionally shortcuttable by `decide`.
+-- It imports nothing beyond the core Lean 4 prelude.
 
 /-- A trivially decidable proposition. `decide` can close this goal immediately. -/
 theorem onePlusOneEqTwo : 1 + 1 = 2 := by
@@ -11,3 +17,6 @@ theorem twoStepAnd : True ∧ True := by
   constructor
   · trivial
   · trivial
+```
+:::
+::::

@@ -43,8 +43,17 @@ private partial def dumpTree (indent : String) (ci? : Option ContextInfo) (tree 
 def main (args : List String) : IO Unit := do
   Lean.initSearchPath (← Lean.findSysroot)
   unsafe Lean.enableInitializersExecution
-  let filePath : System.FilePath := args.headD "TestSuite/Fixtures/Simple.lean"
+  let filePath : System.FilePath := args.headD "TestSuite/Fixtures/VerboseWaterproofSince.lean"
   let input ← IO.FS.readFile filePath
+  IO.eprintln s!"=== RAW INPUT (first 500 chars): ==="
+  IO.eprintln s!"{input.take 500}"
+  let areas := parseInputAreas input
+  IO.println s!"=== parseInputAreas: {areas} ==="
+  match areas with
+  | none => IO.println "  → no :::input markers"
+  | some ranges =>
+    IO.println s!"  → {ranges.length} ranges"
+    for r in ranges do IO.println s!"    ({r.1}, {r.2})"
   let opts := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, _messages) ← Parser.parseHeader inputCtx

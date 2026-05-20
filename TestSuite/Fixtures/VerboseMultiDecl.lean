@@ -5,6 +5,14 @@ open Verbose English
 
 set_option linter.unusedTactic false
 
+::::multilean
+:::input
+```lean
+-- Fixture for testing that filterVerboseSteps resets per declaration.
+-- Declaration 1 uses Verbose step boundaries; Declaration 2 does not.
+
+set_option linter.unusedTactic false
+
 -- Decl 1: two Verbose steps, each with a noop `show` before `norm_num`.
 -- filterVerboseSteps keeps only `show` per step; skip-last removes step 2 → 1 decide shortcut.
 example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
@@ -24,3 +32,6 @@ Proof:
   show 1 + 1 = 2   -- noop; `decide` can close the goal here (not the last step → shortcut)
   norm_num          -- closes the goal; last → skip
 QED
+```
+:::
+::::

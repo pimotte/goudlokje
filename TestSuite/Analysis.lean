@@ -282,6 +282,21 @@ def testNestedDiscussNoShortcuts : IO Unit := do
     throw (IO.userError
       s!"testNestedDiscuss: expected 0 shortcuts, got {results.size} at:{detail}")
 
+/-- Integration test: verify that shortcuts inside the Waterproof :::input block
+    are detected while those outside the input area are not. -/
+def testInputAreaScoping : IO Unit := do
+  let fixturePath : System.FilePath :=
+    "TestSuite/Fixtures/VerboseWaterproofInputArea.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.size == 1 do
+    throw (IO.userError
+      s!"testInputAreaScoping: expected 1 shortcut (inside input area only), \
+        got {results.size}")
+  let r := results[0]!
+  unless r.exercise == "inside-area" do
+    throw (IO.userError
+      s!"testInputAreaScoping: expected exercise \"inside-area\", got \"{r.exercise}\"")
+
 /-- Diagnostic: trace filter stages for VerboseWaterproofFull. Always throws. -/
 def diagFilterStages : IO Unit := do
   let log ← dumpFilterStages "TestSuite/Fixtures/VerboseWaterproofFull.lean"
@@ -359,6 +374,8 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSinceGetExerciseHasOneProbePoint"
   testBulletSeenAsStepInVerboseWaterproofFull;
                              IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
+  testInputAreaScoping;
+                             IO.println "  ✓ testInputAreaScoping"
   testShortcutsNotDetectedInNonVerboseFile;
                              IO.println "  ✓ testShortcutsNotDetectedInNonVerboseFile"
 

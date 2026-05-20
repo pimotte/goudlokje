@@ -15,19 +15,6 @@ lean_exe "goudlokje" where
 lean_lib "TestSuite" where
   roots := #[`TestSuite]
 
--- Build fixture files so their package dependencies (Verbose, WaterproofGenre) are compiled.
--- These oleans must be present at runtime when `analyzeFile` processes the fixture files.
--- Note: Waterproof.lean uses #doc format with intentionally incomplete proofs, so we only
--- build Verbose.lean here; WaterproofGenre is built via the `FixtureDeps` target.
-@[default_target]
-lean_lib "TestFixtures" where
-  roots := #[`TestSuite.Fixtures.Simple, `TestSuite.Fixtures.Verbose,
-             `TestSuite.Fixtures.VerboseMultiStep, `TestSuite.Fixtures.SkipLastStep,
-             `TestSuite.Fixtures.LintB1, `TestSuite.Fixtures.LintB2,
-             `TestSuite.Fixtures.LintB3, `TestSuite.Fixtures.LintB1Verbose,
-             `TestSuite.Fixtures.LintB1VerboseCheck,
-             `TestSuite.Fixtures.LintB2FalsePositive]
-
 -- FixtureDeps imports Verbose and Waterproof packages so their oleans are compiled.
 -- This ensures `analyzeFile` can import them at runtime when processing fixture files.
 @[default_target]

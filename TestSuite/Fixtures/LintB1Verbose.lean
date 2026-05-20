@@ -5,6 +5,15 @@ import Verbose.English.All
 
 set_option linter.unusedTactic false
 
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB1 false-positive regression tests.
+-- Verbose lines beginning with "Let's" or "Since" must NOT be reported as B1
+-- violations, even though they expand internally to raw Lean tactics.
+
+set_option linter.unusedTactic false
+
 -- "Let's first/now prove that" are Verbose step boundaries; they expand
 -- internally to raw tactics but must not be flagged by B1.
 example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
@@ -17,3 +26,6 @@ example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
 example : ∃ k : ℕ, 4 = 2 * k := by
   Let's prove that 2 works
   rfl
+```
+:::
+::::

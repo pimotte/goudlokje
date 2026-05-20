@@ -4,6 +4,14 @@ import Verbose.English.All
 
 set_option linter.unusedTactic false
 
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB2 (type annotation detection) tests.
+-- Contains type annotations in Verbose proof bodies that CheckB2 should flag.
+
+set_option linter.unusedTactic false
+
 -- Fix with explicit type annotation inside a Verbose proof:
 -- CheckB2 should flag the `Fix n : ℕ` line.
 example : (∀ n : ℕ, n + 0 = n) ∧ True := by
@@ -20,3 +28,6 @@ example : True ∧ True := by
   exact (trivial : True)
   Let's now prove that True
   trivial
+```
+:::
+::::
