@@ -607,9 +607,12 @@ private def analyzeInput
           currentDecl := decl
           proofStartLine := pos.line
           groupSeen := true
-          exerciseName := match decl with
-            | some name => name.toString
-            | none      => findExerciseName sourceForNames pos.line
+          exerciseName :=
+            let fromSource := findExerciseName sourceForNames pos.line
+            if fromSource != "example" then fromSource
+            else match decl with
+              | some name => name.toString
+              | none      => "example"
         let lineInProof := pos.line - proofStartLine + 1
         for goal in ti.goalsBefore do
           for tacticStr in probeTactics do

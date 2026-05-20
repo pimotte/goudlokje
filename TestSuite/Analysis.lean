@@ -300,7 +300,8 @@ def testExistentialWitnessNoShortcuts : IO Unit := do
       s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
 
 /-- Integration test: a two-step `Since…we get` + `Since…we conclude` exercise
-    inside a Waterproof multilean input block has exactly 1 probe point.
+    inside a Waterproof multilean input block has exactly 1 probe point with
+    exercise name "1.1.13".
     `skipLastPerDeclaration` drops the final `Since p ∧ q we conclude that q`,
     leaving only the first position where `Since (p ∧ q) ∧ r we conclude that q`
     closes the goal directly — a genuine shortcut. -/
@@ -312,6 +313,10 @@ def testSinceGetExerciseHasOneProbePoint : IO Unit := do
     throw (IO.userError
       s!"testSinceGetExercise: expected exactly 1 probe point (last Since…conclude skipped), \
         got {results.size} at:{detail}")
+  let r := results[0]!
+  unless r.exercise == "1.1.13" do
+    throw (IO.userError
+      s!"testSinceGetExercise: expected exercise name \"1.1.13\", got \"{r.exercise}\"")
 
 /-- Shortcuts must NOT be detected in non-Verbose Lean proofs.
     Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
