@@ -51,26 +51,25 @@ def runUpdate
       if let .unexpected p := r then
         let accept ← do
           if acceptAll then
-            IO.println s!"Accepting shortcut at {p.file}:{p.line}:{p.column} — `{p.tactic}`"
+            IO.println s!"Accepting shortcut [{p.exercise}:{p.lineInProof}] in {p.file} — `{p.tactic}`"
             pure true
           else
-            promptYN s!"Shortcut at {p.file}:{p.line}:{p.column} — `{p.tactic}`. Accept? [y/N] "
+            promptYN s!"Shortcut [{p.exercise}:{p.lineInProof}] in {p.file} — `{p.tactic}`. Accept? [y/N] "
         if accept then
           newExpected := newExpected.push {
-            file   := p.file
-            line   := p.line
-            column := p.column
-            tactic := p.tactic
+            exercise    := p.exercise
+            lineInProof := p.lineInProof
+            tactic      := p.tactic
           }
 
     -- Handle stale entries: prompt user (or auto-remove with --all).
     for s in cr.stale do
       let remove ← do
         if acceptAll then
-          IO.println s!"Removing stale entry {s.entry.file}:{s.entry.line}:{s.entry.column} — `{s.entry.tactic}`"
+          IO.println s!"Removing stale entry [{s.entry.exercise}:{s.entry.lineInProof}] — `{s.entry.tactic}`"
           pure true
         else
-          promptYN s!"Stale entry at {s.entry.file}:{s.entry.line}:{s.entry.column} — `{s.entry.tactic}`. Remove? [y/N] "
+          promptYN s!"Stale entry [{s.entry.exercise}:{s.entry.lineInProof}] — `{s.entry.tactic}`. Remove? [y/N] "
       if remove then
         newExpected := newExpected.filter (· != s.entry)
 

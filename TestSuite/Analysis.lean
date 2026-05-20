@@ -75,7 +75,7 @@ def testNoDuplicateResults : IO Unit := do
         let rj := results[j]!
         if ri == rj then
           throw (IO.userError
-            s!"testNoDuplicateResults: duplicate at {ri.file}:{ri.line}:{ri.column} — `{ri.tactic}`")
+            s!"testNoDuplicateResults: duplicate [{ri.exercise}:{ri.lineInProof}] — `{ri.tactic}`")
 
 /-- Verbose step filtering: without filtering, `decide` is a shortcut at both
     the `show` (noop) and `norm_num` positions within each step body.
@@ -299,6 +299,25 @@ def testExistentialWitnessNoShortcuts : IO Unit := do
     throw (IO.userError
       s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
 
+/-- Integration test: a two-step `Since…we get` + `Since…we conclude` exercise
+    inside a Waterproof multilean input block has exactly 1 probe point with
+    exercise name "1.1.13".
+    `skipLastPerDeclaration` drops the final `Since p ∧ q we conclude that q`,
+    leaving only the first position where `Since (p ∧ q) ∧ r we conclude that q`
+    closes the goal directly — a genuine shortcut. -/
+def testSinceGetExerciseHasOneProbePoint : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/VerboseWaterproofSince.lean"
+  let results ← analyzeFile fixturePath #["Since (p ∧ q) ∧ r we conclude that q"]
+  unless results.size == 1 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testSinceGetExercise: expected exactly 1 probe point (last Since…conclude skipped), \
+        got {results.size} at:{detail}")
+  let r := results[0]!
+  unless r.exercise == "1.1.13" do
+    throw (IO.userError
+      s!"testSinceGetExercise: expected exercise name \"1.1.13\", got \"{r.exercise}\"")
+
 /-- Shortcuts must NOT be detected in non-Verbose Lean proofs.
     Issue #13: shortcut detection is restricted to Verbose Lean proofs only. -/
 def testShortcutsNotDetectedInNonVerboseFile : IO Unit := do
@@ -336,6 +355,8 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testSinceGetExerciseHasOneProbePoint;
+                             IO.println "  ✓ testSinceGetExerciseHasOneProbePoint"
   testBulletSeenAsStepInVerboseWaterproofFull;
                              IO.println "  ✓ testBulletSeenAsStepInVerboseWaterproofFull"
   testShortcutsNotDetectedInNonVerboseFile;
