@@ -1,9 +1,13 @@
 -- Fixture for testing that filterVerboseSteps resets per declaration.
 -- Declaration 1 uses Verbose step boundaries; Declaration 2 does not.
 import Verbose.English.All
+import WaterproofGenre
 open Verbose English
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Multi-declaration filter fixture" =>
 
 ::::multilean
 :::input

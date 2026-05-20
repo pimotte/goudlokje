@@ -2,8 +2,12 @@
 -- Verbose lines beginning with "Let's" or "Since" must NOT be reported as B1
 -- violations, even though they expand internally to raw Lean tactics.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB1 false-positive fixture" =>
 
 ::::multilean
 :::input

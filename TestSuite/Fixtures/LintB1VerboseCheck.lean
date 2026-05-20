@@ -2,8 +2,12 @@
 -- The Verbose step boundaries (Let's first prove that / Let's now prove that) make
 -- this a Verbose proof. Raw tactics like constructor and exact should be flagged by B1.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB1 Verbose-proof fixture" =>
 
 ::::multilean
 :::input

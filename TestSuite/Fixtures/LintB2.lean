@@ -1,8 +1,12 @@
 -- Fixture for CheckB2 (type annotation detection) tests.
 -- Contains type annotations in Verbose proof bodies that CheckB2 should flag.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB2 lint fixture" =>
 
 ::::multilean
 :::input

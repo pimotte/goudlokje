@@ -1,9 +1,13 @@
 -- Fixture for CheckB3 (sorry detection) tests.
 -- Contains `sorry` in a Verbose proof body that CheckB3 should flag.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
 set_option warn.sorry false
+
+#doc (WaterproofGenre) "CheckB3 sorry fixture" =>
 
 ::::multilean
 :::input

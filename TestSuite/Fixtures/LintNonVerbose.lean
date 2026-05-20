@@ -1,5 +1,10 @@
 -- Fixture: non-Verbose proofs that must NOT trigger B2 or B3 after issue #13.
 -- Verifies that B2 and B3 are restricted to Verbose Lean proofs only.
+import WaterproofGenre
+open WaterproofGenre
+
+#doc (WaterproofGenre) "Non-Verbose lint fixture" =>
+
 ::::multilean
 :::input
 ```lean

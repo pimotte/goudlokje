@@ -4,8 +4,12 @@
 -- Regression guard for internally-synthesised typeAscription info-tree nodes that
 -- are not written by the user (e.g. from Lean/Verbose internal elaboration).
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB2 false-positive fixture" =>
 
 ::::multilean
 :::input

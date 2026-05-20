@@ -1,8 +1,12 @@
 -- Fixture file for Goudlokje Verbose Lean integration tests.
 -- Uses Verbose English tactics where `decide` can shortcut intermediate steps.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Verbose Lean integration fixture" =>
 
 ::::multilean
 :::input

@@ -4,8 +4,12 @@
 -- With filterVerboseSteps = false: 4 shortcuts total (2 per step, at `show` and `norm_num`).
 -- With filterVerboseSteps = true:  2 shortcuts total (1 per step, only at `show`).
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Verbose step filtering fixture" =>
 
 ::::multilean
 :::input

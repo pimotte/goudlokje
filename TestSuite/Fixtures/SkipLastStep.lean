@@ -6,8 +6,12 @@
 -- This reproduces the mwe/WaterproofExercisesLean exercise 1.1.13 issue:
 -- a probe tactic that works at the final step does not save any proof lines.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Skip-last-step fixture" =>
 
 ::::multilean
 :::input

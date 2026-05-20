@@ -1,8 +1,12 @@
 -- Fixture for CheckB1 (raw Lean tactic detection) tests.
 -- Contains raw Lean tactics in proof bodies that CheckB1 should flag.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB1 lint fixture" =>
 
 ::::multilean
 :::input

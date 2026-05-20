@@ -16,9 +16,13 @@
 --   - Without fix: 2 shortcuts (wrapper@Proof: + show@step1; norm_num is last → skip)
 --   - With fix:    1 shortcut  (show@step1 only)
 import Verbose.English.All
+import WaterproofGenre
 open Verbose English
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Verbose Exercise wrapper fixture" =>
 
 ::::multilean
 :::input

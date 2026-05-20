@@ -1,10 +1,13 @@
 -- Fixture for testing input area scoping.
 -- Shortcuts inside :::input are detected; shortcuts outside are not.
 import Verbose.English.All
-
+import WaterproofGenre
 open Verbose English
+open WaterproofGenre
 
 set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "Input area scoping fixture" =>
 
 ::::multilean
 :::input
