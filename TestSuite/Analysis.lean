@@ -416,5 +416,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testNoInputAreasNoShortcuts"
   testShortcutsNotDetectedInNonVerboseFile;
                              IO.println "  ✓ testShortcutsNotDetectedInNonVerboseFile"
+  testNoUnclassifiedTacticKinds;
+                             IO.println "  ✓ testNoUnclassifiedTacticKinds"
 
 end TestSuite.Analysis

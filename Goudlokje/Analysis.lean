@@ -248,7 +248,28 @@ def isVerboseTacticKind (kind : String) : Bool :=
   kind == "Verbose.English.withSuggestions"                       ||
   kind == "Verbose.French.withSuggestions"                        ||
   kind == "withoutSuggestions"                                    ||
-  kind == "tacticStrg_assumption"
+  kind == "tacticStrg_assumption"                                 ||
+  -- Mathlib / Lean internal tactics (may appear in Verbose proofs)
+  kind == "Mathlib.Tactic.normNum"                                ||
+  kind == "Mathlib.Tactic.FieldSimp.fieldSimp"                    ||
+  kind == "Mathlib.Tactic.Push.push_neg"                          ||
+  kind == "Mathlib.Tactic.Ring.ring1"                             ||
+  kind == "Mathlib.Tactic.RingNF.ring"                            ||
+  kind == "Lean.Meta.tacticFixed_push_neg_"                       ||
+  kind == "Lean.Parser.Tactic.constructor"                        ||
+  kind == "Lean.Parser.Tactic.tacticTrivial"                      ||
+  kind == "Lean.Parser.Tactic.applyRfl"                           ||
+  kind == "Lean.Parser.Tactic.rewriteSeq"                         ||
+  kind == "Lean.Parser.Tactic.rwSeq"                              ||
+  kind == "Lean.Parser.Tactic.set_option"                         ||
+  kind == "Lean.Parser.Tactic.simp"                               ||
+  kind == "Lean.Parser.Tactic.skip"                               ||
+  kind == "Lean.Parser.Tactic.unknown"                            ||
+  kind == "Lean.Parser.Tactic.exact"                              ||
+  kind == "Lean.Parser.Tactic.tacticSorry"                        ||
+  kind == "tacticFix__"                                           ||
+  kind == "tacticFix₁__"                                           ||
+  kind == "null"
 
 /-- Return true if `tree` contains at least one Verbose tactic node.
     Used to restrict shortcut detection and lint checks to Verbose Lean proofs only. -/
@@ -538,7 +559,9 @@ def classifyTacticKinds (filePath : System.FilePath) :
     -- Real Verbose tactics written by students; valid probe targets
         else if k == "tacticWeConcludeBy_"                        ||
             k == "Verbose.English.tacticSince_WeConcludeThat_" ||
-            k == "Verbose.English.tacticSince_WeGetThat_Hence_"
+            k == "Verbose.English.tacticSince_WeGetThat_Hence_" ||
+            k == "tacticFix__"                                     ||
+            k == "tacticFix₁__"
     then .userTactic
     else .unknown
   let kindMap := allInfos.foldl (fun acc (_, ti) =>
