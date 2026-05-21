@@ -242,6 +242,7 @@ def isVerboseTacticKind (kind : String) : Bool :=
   kind == "tacticLet'sProveThat_Works_"                           ||
   kind == "tacticLet'sProveThat_"                                 ||
   kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
   kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
   kind == "tacticWeCompute_"                                      ||
   kind == "Verbose.English.withSuggestions"                       ||
@@ -271,6 +272,7 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "tacticLet'sProveThat_Works_"                            ||
   k == "tacticLet'sProveThat_"                                  ||
   k == "Verbose.NameLess.tacticAssumeThat__"                    ||
+  k == "Verbose.NameLess.tacticAssumeForContradictionThat__"    ||
   k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
 
 /-- When `filterVerboseSteps` is true, filter tactic positions from declarations that
@@ -510,6 +512,7 @@ def classifyTacticKinds (filePath : System.FilePath) :
             k == "tacticLet'sProveThat_Works_"                            ||
             k == "tacticLet'sProveThat_"                                  ||
             k == "Verbose.NameLess.tacticAssumeThat__"                    ||
+            k == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
             k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
     then .boundary
         else if k == "tacticWeCompute_"

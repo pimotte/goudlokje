@@ -315,6 +315,27 @@ def testExistentialWitnessNoShortcuts : IO Unit := do
     throw (IO.userError
       s!"testExistentialWitness: expected 0 shortcuts, got {results.size} at:{detail}")
 
+/-- Regression test: `Assume for contradiction that …` inside a focused proof bullet
+    (the `·` syntax) must NOT produce a false-positive shortcut for "We conclude by
+    hypothesis".  The `Assume for contradiction` is a `Verbose.NameLess.tacticAssumeThat__`
+    step boundary, and the `·` bullet is filtered as a synthetic container.  Together
+    they must produce 0 shortcuts.
+
+    This is a minimal reproduction of the bug reported in `sheet1_subset.lean`
+    (exercise 2.1.10): without the fix, the step filter does not correctly exclude
+    `Assume for contradiction` at a bullet boundary position, producing a false
+    positive shortcut probe. -/
+def testAssumeThatInFocusedBulletNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath :=
+    "TestSuite/Fixtures/VerboseWaterproofAssumeThatInBullet.lean"
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.size == 0 do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testAssumeThatInFocusedBullet: expected 0 shortcuts (Assume for contradiction \
+        in focused bullet must not produce a shortcut probe), got {results.size} at:{detail}")
+
 /-- Integration test: a two-step `Since…we get` + `Since…we conclude` exercise
     inside a Waterproof multilean input block has exactly 1 probe point with
     exercise name "1.1.13".
@@ -383,6 +404,8 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testSkipLastTacticNotReported"
   testVerboseExerciseDoesNotProbeBeforeProof;
                              IO.println "  ✓ testVerboseExerciseDoesNotProbeBeforeProof"
+  testAssumeThatInFocusedBulletNoShortcuts;
+                             IO.println "  ✓ testAssumeThatInFocusedBulletNoShortcuts"
   testSinceGetExerciseHasOneProbePoint;
                              IO.println "  ✓ testSinceGetExerciseHasOneProbePoint"
   testBulletSeenAsStepInVerboseWaterproofFull;
