@@ -92,6 +92,71 @@ def parseInputAreas (input : String) : Option (List (Nat × Nat)) :=
         rangesRev
     some finalRanges.reverse
 
+/-- Return true if this tactic kind is a **user-facing tactic** that
+    a student would actually write. This filters out internal elaboration artifacts
+    (Lean.Parser.Tactic.* nodes that are children of Verbose tactic elaboration).
+    
+    User-facing Verbose tactics include:
+    - Step boundary tactics: Let's first prove that, Let's now prove that, etc.
+    - Conclusion tactics: We conclude by hypothesis, Since... we conclude that
+    - Assumption tactics: Let, Assume, Assume for contradiction
+    - Focus tactics: Fix
+    - Other Verbose tactics: We discuss depending on whether...
+    
+    Regular Lean/Mathlib tactics are also kept (Mathlib.Tactic.*, etc.).
+    Internal elaboration artifacts (specific Lean.Parser.Tactic.* kinds that
+    appear as children of Verbose opaque subtrees like Let's prove that) are
+    filtered out.
+    
+    The specific kinds filtered out are the ones listed in the `opaqueChild`
+    category of `classifyTacticKinds` plus `applyRfl`, `simp`, `skip`, etc.
+    which are known Verbose elaboration artifacts. -/
+private def isUserFacingVerboseTactic (kind : String) : Bool :=
+  -- Verbose step-boundary tactics
+  kind == "tacticLet'sFirstProveThat_"                             ||
+  kind == "tacticLet'sNowProveThat_"                              ||
+  kind == "tacticLet'sProveThat_Works_"                           ||
+  kind == "tacticLet'sProveThat_"                                 ||
+  -- Verbose assumption tactics
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
+  -- Verbose English tactics (user-facing)
+  kind == "Verbose.English.tacticSince_WeConcludeThat_"           ||
+  kind == "Verbose.English.tacticSince_WeGetThat_Hence_"          ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  -- Verbose conclusion tactics
+  kind == "tacticWeConcludeBy_"                                   ||
+  -- Verbose Fix tactics (user-facing)
+  kind == "tacticFix__"                                           ||
+  kind == "tacticFix₁__" ||
+  -- Regular Mathlib tactics (keep these for Waterproof+Verbose proofs)
+  kind.startsWith "Mathlib." ||
+  -- Other regular Lean tactics that are NOT internal elaboration artifacts.
+  -- We allow any tactic kind that is NOT in the explicit list of internal
+  -- elaboration artifacts below. This includes regular `show`, `by`, etc.
+  -- that students write in Verbose proof bodies.
+  if kind.startsWith "Lean.Parser.Tactic." then
+    -- Filter out known internal elaboration artifact kinds
+    kind != "Lean.Parser.Tactic.applyRfl"    &&
+    kind != "Lean.Parser.Tactic.skip"        &&
+    kind != "Lean.Parser.Tactic.simp"        &&
+    kind != "Lean.Parser.Tactic.first"       &&
+    kind != "Lean.Parser.Tactic.tacticTry_"  &&
+    kind != "Lean.Parser.Tactic.refine"      &&
+    kind != "Lean.Parser.Tactic.done"        &&
+    kind != "Lean.Parser.Tactic.eqRefl"      &&
+    kind != "Lean.Parser.Tactic.tacticRfl"   &&
+    kind != "Lean.Parser.Tactic.show"        &&
+    kind != "Lean.Parser.Tactic.focus"       &&
+    kind != "Lean.Parser.Tactic.seq1"        &&
+    kind != "Lean.Parser.Tactic.paren"       &&
+    kind != "Lean.Parser.Tactic.exact"       &&
+    kind != "Lean.Parser.Tactic.tacticSorry" &&
+    kind != "Lean.Parser.Tactic.tacticIterate____" &&
+    kind != "Lean.Parser.Tactic.unknown"
+  else
+    true
+
 /-- Return true if this `TacticInfo` is a synthetic container or proof-scaffolding
     tactic that does not correspond to a user-written proof step.
 
@@ -203,7 +268,7 @@ private partial def collectTacticInfos
     Returns `true` if the tactic closes the first goal. -/
 private def tryTacticAt
     (ci : ContextInfo) (mctxBefore : MetavarContext)
-    (goal : MVarId) (tacticStr : String) : IO Bool := do
+    (goal : MVarId) (tacticStr : String) (_verbose : Bool) : IO Bool := do
   match Parser.runParserCategory ci.env `tactic tacticStr with
   | .error _ => return false
   | .ok stx =>
@@ -580,7 +645,8 @@ private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
     (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
-    (inputAreaRanges : Option (List (Nat × Nat)) := none) :
+    (inputAreaRanges : Option (List (Nat × Nat)) := none)
+    (verbose : Bool := false) :
     IO (Array ProbeResult) := do
   let opts  := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input displayPath.toString
@@ -646,7 +712,7 @@ private def analyzeInput
         for goal in ti.goalsBefore do
           for tacticStr in probeTactics do
             commandProbeAttempts := commandProbeAttempts + 1
-            let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
+            let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr verbose
             if let some cb := onProbe then
               cb pos.line pos.column tacticStr succeeded
             if succeeded then
@@ -703,7 +769,8 @@ def getOrBuildEnv
 def analyzeFile
     (filePath : System.FilePath) (probeTactics : Array String)
     (filterVerboseSteps : Bool := false)
-  (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none) :
+  (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
+  (verbose : Bool := false) :
     IO (Array ProbeResult) := do
   -- Ensure the Lean stdlib .olean files are findable at runtime.
   -- `initSearchPath` also calls `addSearchPathFromEnv` which picks up the
@@ -724,7 +791,7 @@ def analyzeFile
       return #[]
     else
       analyzeInput filePath input probeTactics filterVerboseSteps
-        (onProbe := onProbe) (inputAreaRanges := some ranges)
+        (onProbe := onProbe) (inputAreaRanges := some ranges) (verbose := verbose)
 
 /-- Debug utility: run the filter pipeline on `filePath` and return a human-readable
     log showing, for each command, the raw tactic positions, positions after

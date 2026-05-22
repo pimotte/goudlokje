@@ -65,7 +65,7 @@ def runProbeWorkerCli (args : List String) : IO UInt32 := do
             let mark := if succeeded then "✓" else "✗"
             IO.println s!"  Probe {mark} {line}:{col} — `{tactic}`"
       else none
-    let results ← analyzeFile filePath tacticArgs.toArray filterVerboseSteps (onProbe := probeLog)
+    let results ← analyzeFile filePath tacticArgs.toArray filterVerboseSteps (onProbe := probeLog) (verbose := verbose)
     let payload : ProbeWorkerResult := {
       results := results
       probeAttempts := ← probeAttempts.get
