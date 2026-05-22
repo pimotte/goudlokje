@@ -47,6 +47,116 @@ private def findExerciseName (input : String) (proofStartLine : Nat) : String :=
     ("example", false)
   result
 
+/-- Check whether `line` (1-based) falls within any of the given input area ranges. -/
+def isInInputArea (line : Nat) (ranges : List (Nat × Nat)) : Bool :=
+  ranges.any (fun (start, e) => start ≤ line && line ≤ e)
+
+/-- Parse `:::input` / `:::` markers, returning (startLine, endLine) ranges (1-based,
+    inclusive) defining student input areas.
+    Returns `none` if no `:::input` markers are present (no input area filtering needed).
+    Returns `some ranges` otherwise; ranges may be empty if all `:::input` blocks were empty.
+
+    Respects ```lean fence boundaries: markers inside a fence are ignored (student code). -/
+def parseInputAreas (input : String) : Option (List (Nat × Nat)) :=
+  let lines := input.splitOn "\n"
+  let hasInput := lines.any (fun l => l.trimAscii == ":::input")
+  if !hasInput then none
+  else
+    let (rangesRev, _, currentStart, _) :=
+      lines.foldl
+        (fun (acc : List (Nat × Nat) × Bool × Nat × Nat) (line : String) =>
+          let (rangesRev, inFence, currentStart, idx) := acc
+          let trimmed := line.trimAscii.toString
+          if inFence then
+            if trimmed == "```" then
+              (rangesRev, false, currentStart, idx + 1)
+            else
+              (rangesRev, true, currentStart, idx + 1)
+          else if trimmed.startsWith "```lean" then
+            (rangesRev, true, currentStart, idx + 1)
+          else if trimmed == ":::input" then
+            (rangesRev, false, idx + 1, idx + 1)  -- 1-based line number
+          else if trimmed == ":::" then
+            if currentStart > 0 then
+              ((currentStart, idx) :: rangesRev, false, 0, idx + 1)
+            else
+              (rangesRev, false, 0, idx + 1)
+          else
+            (rangesRev, inFence, currentStart, idx + 1))
+        ([], false, 0, 0)
+    -- If still in an input block at EOF, close at last line
+    let finalRanges :=
+      if currentStart > 0 then
+        (currentStart, lines.length) :: rangesRev
+      else
+        rangesRev
+    some finalRanges.reverse
+
+/-- Return true if this tactic kind is a **user-facing tactic** that
+    a student would actually write. This filters out internal elaboration artifacts
+    (Lean.Parser.Tactic.* nodes that are children of Verbose tactic elaboration).
+    
+    User-facing Verbose tactics include:
+    - Step boundary tactics: Let's first prove that, Let's now prove that, etc.
+    - Conclusion tactics: We conclude by hypothesis, Since... we conclude that
+    - Assumption tactics: Let, Assume, Assume for contradiction
+    - Focus tactics: Fix
+    - Other Verbose tactics: We discuss depending on whether...
+    
+    Regular Lean/Mathlib tactics are also kept (Mathlib.Tactic.*, etc.).
+    Internal elaboration artifacts (specific Lean.Parser.Tactic.* kinds that
+    appear as children of Verbose opaque subtrees like Let's prove that) are
+    filtered out.
+    
+    The specific kinds filtered out are the ones listed in the `opaqueChild`
+    category of `classifyTacticKinds` plus `applyRfl`, `simp`, `skip`, etc.
+    which are known Verbose elaboration artifacts. -/
+private def isUserFacingVerboseTactic (kind : String) : Bool :=
+  -- Verbose step-boundary tactics
+  kind == "tacticLet'sFirstProveThat_"                             ||
+  kind == "tacticLet'sNowProveThat_"                              ||
+  kind == "tacticLet'sProveThat_Works_"                           ||
+  kind == "tacticLet'sProveThat_"                                 ||
+  -- Verbose assumption tactics
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
+  -- Verbose English tactics (user-facing)
+  kind == "Verbose.English.tacticSince_WeConcludeThat_"           ||
+  kind == "Verbose.English.tacticSince_WeGetThat_Hence_"          ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  -- Verbose conclusion tactics
+  kind == "tacticWeConcludeBy_"                                   ||
+  -- Verbose Fix tactics (user-facing)
+  kind == "tacticFix__"                                           ||
+  kind == "tacticFix₁__" ||
+  -- Regular Mathlib tactics (keep these for Waterproof+Verbose proofs)
+  kind.startsWith "Mathlib." ||
+  -- Other regular Lean tactics that are NOT internal elaboration artifacts.
+  -- We allow any tactic kind that is NOT in the explicit list of internal
+  -- elaboration artifacts below. This includes regular `show`, `by`, etc.
+  -- that students write in Verbose proof bodies.
+  if kind.startsWith "Lean.Parser.Tactic." then
+    -- Filter out known internal elaboration artifact kinds
+    kind != "Lean.Parser.Tactic.applyRfl"    &&
+    kind != "Lean.Parser.Tactic.skip"        &&
+    kind != "Lean.Parser.Tactic.simp"        &&
+    kind != "Lean.Parser.Tactic.first"       &&
+    kind != "Lean.Parser.Tactic.tacticTry_"  &&
+    kind != "Lean.Parser.Tactic.refine"      &&
+    kind != "Lean.Parser.Tactic.done"        &&
+    kind != "Lean.Parser.Tactic.eqRefl"      &&
+    kind != "Lean.Parser.Tactic.tacticRfl"   &&
+    kind != "Lean.Parser.Tactic.show"        &&
+    kind != "Lean.Parser.Tactic.focus"       &&
+    kind != "Lean.Parser.Tactic.seq1"        &&
+    kind != "Lean.Parser.Tactic.paren"       &&
+    kind != "Lean.Parser.Tactic.exact"       &&
+    kind != "Lean.Parser.Tactic.tacticSorry" &&
+    kind != "Lean.Parser.Tactic.tacticIterate____" &&
+    kind != "Lean.Parser.Tactic.unknown"
+  else
+    true
+
 /-- Return true if this `TacticInfo` is a synthetic container or proof-scaffolding
     tactic that does not correspond to a user-written proof step.
 
@@ -158,7 +268,7 @@ private partial def collectTacticInfos
     Returns `true` if the tactic closes the first goal. -/
 private def tryTacticAt
     (ci : ContextInfo) (mctxBefore : MetavarContext)
-    (goal : MVarId) (tacticStr : String) : IO Bool := do
+    (goal : MVarId) (tacticStr : String) (_verbose : Bool) : IO Bool := do
   match Parser.runParserCategory ci.env `tactic tacticStr with
   | .error _ => return false
   | .ok stx =>
@@ -192,17 +302,31 @@ partial def processCommandsCollectTrees
     Covers step-boundary tactics, proof wrappers, and other Verbose-specific kinds.
     Used to determine whether an InfoTree originates from a Verbose Lean proof. -/
 def isVerboseTacticKind (kind : String) : Bool :=
+  -- Genuine Verbose tactic kinds (student-written Verbose commands)
   kind == "tacticLet'sFirstProveThat_"                             ||
   kind == "tacticLet'sNowProveThat_"                              ||
   kind == "tacticLet'sProveThat_Works_"                           ||
   kind == "tacticLet'sProveThat_"                                 ||
   kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  kind == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
   kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
   kind == "tacticWeCompute_"                                      ||
   kind == "Verbose.English.withSuggestions"                       ||
   kind == "Verbose.French.withSuggestions"                        ||
   kind == "withoutSuggestions"                                    ||
-  kind == "tacticStrg_assumption"
+  kind == "tacticStrg_assumption"                                 ||
+  -- Verbose proof scaffolding
+  kind == "tacticFix__"                                           ||
+  kind == "tacticFix₁__"                                           ||
+  -- Verbose English `Since...we get/conclude` (non-opaque, not step boundary)
+  kind == "Verbose.English.tacticSince_WeGetThat_Hence_"          ||
+  kind == "Verbose.English.tacticSince_WeConcludeThat_"           ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  -- Verbose conclusion tactics
+  kind == "tacticWeConcludeBy_"                                   ||
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  -- Internal scaffolding (treated as Verbose for treeContainsVerbose)
+  kind == "null"
 
 /-- Return true if `tree` contains at least one Verbose tactic node.
     Used to restrict shortcut detection and lint checks to Verbose Lean proofs only. -/
@@ -226,6 +350,7 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "tacticLet'sProveThat_Works_"                            ||
   k == "tacticLet'sProveThat_"                                  ||
   k == "Verbose.NameLess.tacticAssumeThat__"                    ||
+  k == "Verbose.NameLess.tacticAssumeForContradictionThat__"    ||
   k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
 
 /-- When `filterVerboseSteps` is true, filter tactic positions from declarations that
@@ -465,6 +590,7 @@ def classifyTacticKinds (filePath : System.FilePath) :
             k == "tacticLet'sProveThat_Works_"                            ||
             k == "tacticLet'sProveThat_"                                  ||
             k == "Verbose.NameLess.tacticAssumeThat__"                    ||
+            k == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
             k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
     then .boundary
         else if k == "tacticWeCompute_"
@@ -490,7 +616,9 @@ def classifyTacticKinds (filePath : System.FilePath) :
     -- Real Verbose tactics written by students; valid probe targets
         else if k == "tacticWeConcludeBy_"                        ||
             k == "Verbose.English.tacticSince_WeConcludeThat_" ||
-            k == "Verbose.English.tacticSince_WeGetThat_Hence_"
+            k == "Verbose.English.tacticSince_WeGetThat_Hence_" ||
+            k == "tacticFix__"                                     ||
+            k == "tacticFix₁__"
     then .userTactic
     else .unknown
   let kindMap := allInfos.foldl (fun acc (_, ti) =>
@@ -501,57 +629,15 @@ def classifyTacticKinds (filePath : System.FilePath) :
   let sorted := kindMap.toList.mergeSort (fun (a, _) (b, _) => a < b)
   return sorted.toArray
 
-/-- Keep only lines that are meaningful Lean context outside fenced `lean` blocks.
-    This is used as a fallback for Verso/Waterproof `#doc` sources where the
-    fenced code is no longer elaborated as ordinary top-level commands. -/
-private def keepOutsideLeanFenceLine (line : String) : Bool :=
-  let trimmed := line.trimAscii.toString
-  trimmed.isEmpty ||
-  trimmed.startsWith "--" ||
-  trimmed.startsWith "/-" ||
-  trimmed.startsWith "-/" ||
-  trimmed.startsWith "import " ||
-  trimmed.startsWith "open " ||
-  trimmed.startsWith "namespace " ||
-  trimmed.startsWith "section " ||
-  trimmed.startsWith "end " ||
-  trimmed.startsWith "set_option "
-
-/-- Build an overlay source that preserves imports/preamble outside fenced blocks
-    and keeps only the contents of fenced `lean` blocks. All other lines are
-    replaced by blanks so source positions still line up with the original file. -/
-private def extractLeanFenceOverlay? (input : String) : Option String :=
-  let (linesRev, _inFence, sawFence, keptLean) :=
-    (input.splitOn "\n").foldl
-      (fun (acc : List String × Bool × Bool × Bool) line =>
-        let (linesRev, inFence, sawFence, keptLean) := acc
-        let trimmed := line.trimAscii.toString
-        if inFence then
-          if trimmed == "```" then
-            ("" :: linesRev, false, sawFence, keptLean)
-          else
-            (line :: linesRev, true, sawFence, keptLean || !trimmed.isEmpty)
-        else if trimmed.startsWith "```lean" then
-          ("" :: linesRev, true, true, keptLean)
-        else
-          let kept := if keepOutsideLeanFenceLine line then line else ""
-          (kept :: linesRev, false, sawFence, keptLean))
-      ([], false, false, false)
-  if sawFence && keptLean then
-    some ("\n".intercalate linesRev.reverse)
-  else
-    none
-
 /-- Analyse a single Lean input string, returning every (position, tactic) pair
     where a probe tactic succeeds.
-    `originalSource`, when provided, is used by `findExerciseName` to recover
-    Verbose exercise names from lines that may have been blanked in `input`
-    (e.g. when `input` is a fence-overlay from `extractLeanFenceOverlay?`). -/
+    `inputAreaRanges`, if provided, restricts probing to lines inside Waterproof
+    Genre `:::input` blocks. -/
 private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
-    (filterVerboseSteps : Bool := false)
     (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
-    (originalSource : Option String := none) :
+    (inputAreaRanges : Option (List (Nat × Nat)) := none)
+    (verbose : Bool := false) :
     IO (Array ProbeResult) := do
   let opts  := Elab.async.set Options.empty false
   let inputCtx := Parser.mkInputContext input displayPath.toString
@@ -564,7 +650,7 @@ private def analyzeInput
     cmdPos       := 0
   }
   let ctx : Frontend.Context := { inputCtx }
-  let sourceForNames := originalSource.getD input
+  let sourceForNames := input
   let mut results : Array ProbeResult := #[]
   let mut state := initState
   let mut done := false
@@ -585,9 +671,7 @@ private def analyzeInput
     let allRaw := resolvedTrees.foldl (fun acc t =>
       acc ++ collectTacticInfos none t #[]) #[]
     let tacticInfos :=
-      let filtered :=
-        if filterVerboseSteps then applyVerboseStepFilter allRaw inputCtx.fileMap
-        else allRaw
+      let filtered := applyVerboseStepFilter allRaw inputCtx.fileMap
       skipLastPerDeclaration filtered inputCtx.fileMap
     -- Only probe Verbose Lean proofs; skip commands with no Verbose tactics.
     if resolvedTrees.any treeContainsVerbose then
@@ -617,19 +701,24 @@ private def analyzeInput
         for goal in ti.goalsBefore do
           for tacticStr in probeTactics do
             commandProbeAttempts := commandProbeAttempts + 1
-            let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr
+            let succeeded ← tryTacticAt ci ti.mctxBefore goal tacticStr verbose
             if let some cb := onProbe then
               cb pos.line pos.column tacticStr succeeded
             if succeeded then
-              commandSuccesses := commandSuccesses + 1
-              results := results.push {
-                file        := displayPath.toString
-                line        := pos.line
-                column      := pos.column
-                exercise    := exerciseName
-                lineInProof := lineInProof
-                tactic      := tacticStr
-              }
+              -- Only record if inside input area (when ranges are provided)
+              let withinInput := match inputAreaRanges with
+                | some ranges => isInInputArea pos.line ranges
+                | none       => true
+              if withinInput then
+                commandSuccesses := commandSuccesses + 1
+                results := results.push {
+                  file        := displayPath.toString
+                  line        := pos.line
+                  column      := pos.column
+                  exercise    := exerciseName
+                  lineInProof := lineInProof
+                  tactic      := tacticStr
+                }
     state := newState
     done := isDone
     cmdIdx := cmdIdx + 1
@@ -668,8 +757,8 @@ def getOrBuildEnv
   accumulated directly in `commandState.infoState.trees`. -/
 def analyzeFile
     (filePath : System.FilePath) (probeTactics : Array String)
-    (filterVerboseSteps : Bool := false)
-  (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none) :
+  (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
+  (verbose : Bool := false) :
     IO (Array ProbeResult) := do
   -- Ensure the Lean stdlib .olean files are findable at runtime.
   -- `initSearchPath` also calls `addSearchPathFromEnv` which picks up the
@@ -679,27 +768,27 @@ def analyzeFile
   -- Allow [init] declarations to be executed when importing modules
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let directResults ← analyzeInput filePath input probeTactics filterVerboseSteps (onProbe := onProbe)
-  let merged ← match extractLeanFenceOverlay? input with
-    | some overlay =>
-      let overlayResults ← analyzeInput filePath overlay probeTactics filterVerboseSteps
-        (onProbe := onProbe) (originalSource := input)
-      pure (directResults ++ overlayResults)
-    | none =>
-      pure directResults
-  return merged.foldl (fun acc r => if acc.contains r then acc else acc.push r) #[]
+  let inputAreas := parseInputAreas input
+  match inputAreas with
+  | none =>
+    -- No `:::input` markers → no student input areas → nothing to check
+    return #[]
+  | some ranges =>
+    if ranges.isEmpty then
+      -- Has `:::input` markers but all blocks are empty → nothing to check
+      return #[]
+    else
+      analyzeInput filePath input probeTactics (onProbe := onProbe) (inputAreaRanges := some ranges) (verbose := verbose)
 
 /-- Debug utility: run the filter pipeline on `filePath` and return a human-readable
     log showing, for each command, the raw tactic positions, positions after
-    `applyVerboseStepFilter`, and positions after `skipLastPerDeclaration`.
-    Operates on the fence-overlay (same path as `analyzeFile`). -/
+    `applyVerboseStepFilter`, and positions after `skipLastPerDeclaration`. -/
 def dumpFilterStages (filePath : System.FilePath) : IO String := do
   Lean.initSearchPath (← Lean.findSysroot)
   unsafe Lean.enableInitializersExecution
   let input ← IO.FS.readFile filePath
-  let src := (extractLeanFenceOverlay? input).getD input
   let opts := Elab.async.set Options.empty false
-  let inputCtx := Parser.mkInputContext src filePath.toString
+  let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, _) ← Parser.parseHeader inputCtx
   let (env, _) ← processHeader header opts {} inputCtx
   let initCmdState := Command.mkState env {} opts

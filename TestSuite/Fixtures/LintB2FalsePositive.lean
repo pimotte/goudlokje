@@ -4,6 +4,21 @@
 -- Regression guard for internally-synthesised typeAscription info-tree nodes that
 -- are not written by the user (e.g. from Lean/Verbose internal elaboration).
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
+
+set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB2 false-positive fixture" =>
+
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB2 false-positive regression tests.
+-- This file contains NO user-written (expr : T) type-cast ascriptions in proof
+-- bodies, so CheckB2 should report ZERO violations.
+-- Regression guard for internally-synthesised typeAscription info-tree nodes that
+-- are not written by the user (e.g. from Lean/Verbose internal elaboration).
 
 set_option linter.unusedTactic false
 
@@ -24,3 +39,6 @@ example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
   norm_num
   Let's now prove that 2 + 2 = 4
   norm_num
+```
+:::
+::::

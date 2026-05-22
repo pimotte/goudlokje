@@ -11,17 +11,26 @@ open Goudlokje
 private def setupTempWorkspace (dir : System.FilePath) : IO (System.FilePath × System.FilePath) := do
   try IO.FS.createDir dir catch _ => pure ()
   let leanFile := dir / "Fixture.lean"
-  -- A Verbose two-step proof so that `decide` finds shortcuts at `show` positions.
-  -- Issue #13: shortcuts are only detected in Verbose Lean proofs.
+  -- A Waterproof-style file with :::input area containing a Verbose two-step proof.
+  -- Shortcuts are only checked inside :::input areas.
   IO.FS.writeFile leanFile
     ("import Verbose.English.All\n" ++
+     "import WaterproofGenre\n" ++
+     "open WaterproofGenre\n" ++
+     "#doc (WaterproofGenre) \"Test\" =>\n" ++
+     "::::multilean\n" ++
+     ":::input\n" ++
+     "```lean\n" ++
      "example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by\n" ++
      "  Let's first prove that 1 + 1 = 2\n" ++
      "  show 1 + 1 = 2\n" ++
      "  norm_num\n" ++
      "  Let's now prove that 2 + 2 = 4\n" ++
      "  show 2 + 2 = 4\n" ++
-     "  norm_num\n")
+     "  norm_num\n" ++
+     "```\n" ++
+     ":::\n" ++
+     "::::\n")
   let testJson := dir / "Fixture.test.json"
   -- Ensure any leftover from a previous run is removed.
   try IO.FS.removeFile testJson catch _ => pure ()

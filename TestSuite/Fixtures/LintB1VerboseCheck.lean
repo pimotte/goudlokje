@@ -2,6 +2,19 @@
 -- The Verbose step boundaries (Let's first prove that / Let's now prove that) make
 -- this a Verbose proof. Raw tactics like constructor and exact should be flagged by B1.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
+
+set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB1 Verbose-proof fixture" =>
+
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB1: raw tactics inside a Verbose Lean proof should be flagged.
+-- The Verbose step boundaries (Let's first prove that / Let's now prove that) make
+-- this a Verbose proof. Raw tactics like constructor and exact should be flagged by B1.
 
 set_option linter.unusedTactic false
 
@@ -12,3 +25,6 @@ example : 1 = 1 ∧ 2 = 2 := by
   exact rfl
   Let's now prove that 2 = 2
   exact rfl
+```
+:::
+::::

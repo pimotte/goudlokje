@@ -2,6 +2,19 @@
 -- Verbose lines beginning with "Let's" or "Since" must NOT be reported as B1
 -- violations, even though they expand internally to raw Lean tactics.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
+
+set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB1 false-positive fixture" =>
+
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB1 false-positive regression tests.
+-- Verbose lines beginning with "Let's" or "Since" must NOT be reported as B1
+-- violations, even though they expand internally to raw Lean tactics.
 
 set_option linter.unusedTactic false
 
@@ -17,3 +30,6 @@ example : 1 + 1 = 2 ∧ 2 + 2 = 4 := by
 example : ∃ k : ℕ, 4 = 2 * k := by
   Let's prove that 2 works
   rfl
+```
+:::
+::::

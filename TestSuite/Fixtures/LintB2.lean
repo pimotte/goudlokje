@@ -1,6 +1,18 @@
 -- Fixture for CheckB2 (type annotation detection) tests.
 -- Contains type annotations in Verbose proof bodies that CheckB2 should flag.
 import Verbose.English.All
+import WaterproofGenre
+open WaterproofGenre
+
+set_option linter.unusedTactic false
+
+#doc (WaterproofGenre) "CheckB2 lint fixture" =>
+
+::::multilean
+:::input
+```lean
+-- Fixture for CheckB2 (type annotation detection) tests.
+-- Contains type annotations in Verbose proof bodies that CheckB2 should flag.
 
 set_option linter.unusedTactic false
 
@@ -20,3 +32,6 @@ example : True ∧ True := by
   exact (trivial : True)
   Let's now prove that True
   trivial
+```
+:::
+::::
