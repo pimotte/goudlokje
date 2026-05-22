@@ -6,10 +6,12 @@ namespace TestSuite.Check
 open Goudlokje
 
 /-- End-to-end: `runCheck` must return > 0 when unexpected shortcuts exist.
-    `VerboseMultiStep.lean` has no `.test.json`, so all found shortcuts are unexpected. -/
+    `VerboseMultiStep.lean` has multi-tactic steps so the filter keeps at least
+    one tactic per step (the `show` no-op), plus 2 B1 violations for `show`.
+    Total: 1 shortcut + 2 B1 = 3. -/
 def testCheckNonZeroForUnexpectedShortcuts : IO Unit := do
   let cfg : Config := { tactics := #["decide"] }
-  let n ← runCheck #["TestSuite/Fixtures/Verbose.lean"] cfg
+  let n ← runCheck #["TestSuite/Fixtures/VerboseMultiStep.lean"] cfg
   unless n > 0 do
     throw (IO.userError
       s!"testCheckNonZero: expected >0 unexpected shortcuts, got {n}")
@@ -25,7 +27,7 @@ def testCheckZeroWithEmptyTactics : IO Unit := do
 /-- `runCheck` with debug=true must still return the correct non-zero count. -/
 def testCheckDebugMode : IO Unit := do
   let cfg : Config := { tactics := #["decide"] }
-  let n ← runCheck #["TestSuite/Fixtures/Verbose.lean"] cfg (debug := true)
+  let n ← runCheck #["TestSuite/Fixtures/VerboseMultiStep.lean"] cfg (debug := true)
   unless n > 0 do
     throw (IO.userError
       s!"testCheckDebugMode: expected >0 unexpected shortcuts, got {n}")
@@ -33,7 +35,7 @@ def testCheckDebugMode : IO Unit := do
 /-- `runCheck` with verbose=true must still return the correct non-zero count. -/
 def testCheckVerboseMode : IO Unit := do
   let cfg : Config := { tactics := #["decide"] }
-  let n ← runCheck #["TestSuite/Fixtures/Verbose.lean"] cfg (verbose := true)
+  let n ← runCheck #["TestSuite/Fixtures/VerboseMultiStep.lean"] cfg (verbose := true)
   unless n > 0 do
     throw (IO.userError
       s!"testCheckVerboseMode: expected >0 unexpected shortcuts, got {n}")
