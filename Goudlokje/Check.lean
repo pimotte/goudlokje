@@ -19,7 +19,7 @@ private structure WorksheetCheckSummary where
 private def checkWorksheet
     (ws : WorksheetEntry) (cfg : Config)
     (debugMode : Bool) (verbose : Bool) : IO WorksheetCheckSummary := do
-  let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics cfg.filterVerboseSteps debugMode verbose
+  let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics debugMode verbose
   let found := analyzed.results
   let testPath := ws.testPath.getD (ws.sourcePath.withExtension "test.json")
   let tf := TestFile.load testPath

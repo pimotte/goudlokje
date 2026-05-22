@@ -2,7 +2,7 @@
 -- Minimal reproduction of the bug in sheet1_subset.lean exercise 2.1.10.
 -- Verifies that focused bullets containing Verbose step boundaries
 -- (`Assume for contradiction`) do not produce false-positive shortcuts
--- when `filterVerboseSteps = true`.
+-- always enabled (step filtering is now the default and only mode).
 import WaterproofGenre
 import Verbose.English.All
 open Verbose English

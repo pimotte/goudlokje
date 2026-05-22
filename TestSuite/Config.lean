@@ -36,32 +36,13 @@ def testRoundTrip : IO Unit := do
   let parsed ← IO.ofExcept (Lean.fromJson? json)
   assertEq original parsed "testRoundTrip"
 
-def testFilterVerboseStepsDefault : IO Unit := do
-  -- filterVerboseSteps should default to false when absent from JSON
-  let json ← IO.ofExcept (Lean.Json.parse "{\"tactics\": [\"ring\"]}")
-  let cfg ← IO.ofExcept (Lean.fromJson? (α := Config) json)
-  assertEq false cfg.filterVerboseSteps "testFilterVerboseStepsDefault"
-
-def testFilterVerboseStepsTrue : IO Unit := do
-  let json ← IO.ofExcept (Lean.Json.parse
-    "{\"tactics\": [\"ring\"], \"filterVerboseSteps\": true}")
-  let cfg ← IO.ofExcept (Lean.fromJson? (α := Config) json)
-  assertEq true cfg.filterVerboseSteps "testFilterVerboseStepsTrue"
-
-def testFilterVerboseStepsRoundTrip : IO Unit := do
-  let original : Config := { tactics := #["decide"], filterVerboseSteps := true }
-  let json := Lean.toJson original
-  let parsed ← IO.ofExcept (Lean.fromJson? json)
-  assertEq original parsed "testFilterVerboseStepsRoundTrip"
-
 def runAll : IO Unit := do
-  testValidConfig;                     IO.println "  ✓ testValidConfig"
-  testEmptyTactics;                    IO.println "  ✓ testEmptyTactics"
-  testMissingTacticsField;             IO.println "  ✓ testMissingTacticsField"
-  testUnknownFieldsIgnored;            IO.println "  ✓ testUnknownFieldsIgnored"
-  testRoundTrip;                       IO.println "  ✓ testRoundTrip"
-  testFilterVerboseStepsDefault;       IO.println "  ✓ testFilterVerboseStepsDefault"
-  testFilterVerboseStepsTrue;          IO.println "  ✓ testFilterVerboseStepsTrue"
-  testFilterVerboseStepsRoundTrip;     IO.println "  ✓ testFilterVerboseStepsRoundTrip"
+  testValidConfig;     IO.println "  ✓ testValidConfig"
+  testEmptyTactics;    IO.println "  ✓ testEmptyTactics"
+  testMissingTacticsField;
+                        IO.println "  ✓ testMissingTacticsField"
+  testUnknownFieldsIgnored;
+                        IO.println "  ✓ testUnknownFieldsIgnored"
+  testRoundTrip;       IO.println "  ✓ testRoundTrip"
 
 end TestSuite.Config

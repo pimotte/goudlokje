@@ -1,8 +1,8 @@
 -- Fixture for testing Lean Verbose step filtering.
 -- Each step has two tactics: `show` (a no-op) followed by `norm_num`.
 -- `decide` is a shortcut at BOTH positions within each step body.
--- With filterVerboseSteps = false: 4 shortcuts total (2 per step, at `show` and `norm_num`).
--- With filterVerboseSteps = true:  2 shortcuts total (1 per step, only at `show`).
+-- The filter keeps only the first tactic per step (1 per step, at `show`).
+-- Declaration-level skip-last then drops the last step's representative → 1 shortcut.
 import Verbose.English.All
 import WaterproofGenre
 open WaterproofGenre
@@ -17,8 +17,8 @@ set_option linter.unusedTactic false
 -- Fixture for testing Lean Verbose step filtering.
 -- Each step has two tactics: `show` (a no-op) followed by `norm_num`.
 -- `decide` is a shortcut at BOTH positions within each step body.
--- With filterVerboseSteps = false: 4 shortcuts total (2 per step, at `show` and `norm_num`).
--- With filterVerboseSteps = true:  2 shortcuts total (1 per step, only at `show`).
+-- The filter keeps only the first tactic per step (1 per step, at `show`).
+-- Declaration-level skip-last then drops the last step's representative → 1 shortcut.
 
 set_option linter.unusedTactic false
 

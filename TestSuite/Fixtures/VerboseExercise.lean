@@ -10,9 +10,9 @@
 -- fire here as a false positive.
 --
 -- The proof below has NO Verbose step boundaries (no `Let's first prove that …`),
--- so `filterVerboseSteps` does NOT suppress the wrapper.
+-- the wrapper is NOT suppressed (no step boundaries present).
 --
--- Expected result with `decide` probe and NO filterVerboseSteps:
+-- Expected result with `decide` probe:
 --   - Without fix: 2 shortcuts (wrapper@Proof: + show@step1; norm_num is last → skip)
 --   - With fix:    1 shortcut  (show@step1 only)
 import Verbose.English.All
@@ -39,9 +39,9 @@ set_option linter.unusedTactic false
 -- fire here as a false positive.
 --
 -- The proof below has NO Verbose step boundaries (no `Let's first prove that …`),
--- so `filterVerboseSteps` does NOT suppress the wrapper.
+-- the wrapper is NOT suppressed (no step boundaries present).
 --
--- Expected result with `decide` probe and NO filterVerboseSteps:
+-- Expected result with `decide` probe:
 --   - Without fix: 2 shortcuts (wrapper@Proof: + show@step1; norm_num is last → skip)
 --   - With fix:    1 shortcut  (show@step1 only)
 

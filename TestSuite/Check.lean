@@ -6,7 +6,7 @@ namespace TestSuite.Check
 open Goudlokje
 
 /-- End-to-end: `runCheck` must return > 0 when unexpected shortcuts exist.
-    `Verbose.lean` has no `.test.json`, so all found shortcuts are unexpected. -/
+    `VerboseMultiStep.lean` has no `.test.json`, so all found shortcuts are unexpected. -/
 def testCheckNonZeroForUnexpectedShortcuts : IO Unit := do
   let cfg : Config := { tactics := #["decide"] }
   let n ← runCheck #["TestSuite/Fixtures/Verbose.lean"] cfg

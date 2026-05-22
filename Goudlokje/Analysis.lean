@@ -302,6 +302,7 @@ partial def processCommandsCollectTrees
     Covers step-boundary tactics, proof wrappers, and other Verbose-specific kinds.
     Used to determine whether an InfoTree originates from a Verbose Lean proof. -/
 def isVerboseTacticKind (kind : String) : Bool :=
+  -- Genuine Verbose tactic kinds (student-written Verbose commands)
   kind == "tacticLet'sFirstProveThat_"                             ||
   kind == "tacticLet'sNowProveThat_"                              ||
   kind == "tacticLet'sProveThat_Works_"                           ||
@@ -314,26 +315,17 @@ def isVerboseTacticKind (kind : String) : Bool :=
   kind == "Verbose.French.withSuggestions"                        ||
   kind == "withoutSuggestions"                                    ||
   kind == "tacticStrg_assumption"                                 ||
-  -- Mathlib / Lean internal tactics (may appear in Verbose proofs)
-  kind == "Mathlib.Tactic.normNum"                                ||
-  kind == "Mathlib.Tactic.FieldSimp.fieldSimp"                    ||
-  kind == "Mathlib.Tactic.Push.push_neg"                          ||
-  kind == "Mathlib.Tactic.Ring.ring1"                             ||
-  kind == "Mathlib.Tactic.RingNF.ring"                            ||
-  kind == "Lean.Meta.tacticFixed_push_neg_"                       ||
-  kind == "Lean.Parser.Tactic.constructor"                        ||
-  kind == "Lean.Parser.Tactic.tacticTrivial"                      ||
-  kind == "Lean.Parser.Tactic.applyRfl"                           ||
-  kind == "Lean.Parser.Tactic.rewriteSeq"                         ||
-  kind == "Lean.Parser.Tactic.rwSeq"                              ||
-  kind == "Lean.Parser.Tactic.set_option"                         ||
-  kind == "Lean.Parser.Tactic.simp"                               ||
-  kind == "Lean.Parser.Tactic.skip"                               ||
-  kind == "Lean.Parser.Tactic.unknown"                            ||
-  kind == "Lean.Parser.Tactic.exact"                              ||
-  kind == "Lean.Parser.Tactic.tacticSorry"                        ||
+  -- Verbose proof scaffolding
   kind == "tacticFix__"                                           ||
   kind == "tacticFix₁__"                                           ||
+  -- Verbose English `Since...we get/conclude` (non-opaque, not step boundary)
+  kind == "Verbose.English.tacticSince_WeGetThat_Hence_"          ||
+  kind == "Verbose.English.tacticSince_WeConcludeThat_"           ||
+  kind == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+  -- Verbose conclusion tactics
+  kind == "tacticWeConcludeBy_"                                   ||
+  kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
+  -- Internal scaffolding (treated as Verbose for treeContainsVerbose)
   kind == "null"
 
 /-- Return true if `tree` contains at least one Verbose tactic node.
@@ -643,7 +635,6 @@ def classifyTacticKinds (filePath : System.FilePath) :
     Genre `:::input` blocks. -/
 private def analyzeInput
     (displayPath : System.FilePath) (input : String) (probeTactics : Array String)
-    (filterVerboseSteps : Bool := false)
     (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
     (inputAreaRanges : Option (List (Nat × Nat)) := none)
     (verbose : Bool := false) :
@@ -680,9 +671,7 @@ private def analyzeInput
     let allRaw := resolvedTrees.foldl (fun acc t =>
       acc ++ collectTacticInfos none t #[]) #[]
     let tacticInfos :=
-      let filtered :=
-        if filterVerboseSteps then applyVerboseStepFilter allRaw inputCtx.fileMap
-        else allRaw
+      let filtered := applyVerboseStepFilter allRaw inputCtx.fileMap
       skipLastPerDeclaration filtered inputCtx.fileMap
     -- Only probe Verbose Lean proofs; skip commands with no Verbose tactics.
     if resolvedTrees.any treeContainsVerbose then
@@ -768,7 +757,6 @@ def getOrBuildEnv
   accumulated directly in `commandState.infoState.trees`. -/
 def analyzeFile
     (filePath : System.FilePath) (probeTactics : Array String)
-    (filterVerboseSteps : Bool := false)
   (onProbe : Option (Nat → Nat → String → Bool → IO Unit) := none)
   (verbose : Bool := false) :
     IO (Array ProbeResult) := do
@@ -790,8 +778,7 @@ def analyzeFile
       -- Has `:::input` markers but all blocks are empty → nothing to check
       return #[]
     else
-      analyzeInput filePath input probeTactics filterVerboseSteps
-        (onProbe := onProbe) (inputAreaRanges := some ranges) (verbose := verbose)
+      analyzeInput filePath input probeTactics (onProbe := onProbe) (inputAreaRanges := some ranges) (verbose := verbose)
 
 /-- Debug utility: run the filter pipeline on `filePath` and return a human-readable
     log showing, for each command, the raw tactic positions, positions after

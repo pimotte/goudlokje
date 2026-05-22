@@ -29,14 +29,12 @@ private def parseProbeWorkerOutput (stdout : String) : IO (String × ProbeWorker
 
 def analyzeFileIsolated
     (filePath : System.FilePath) (probeTactics : Array String)
-    (filterVerboseSteps : Bool := false)
     (debug : Bool := false) (verbose : Bool := false) : IO ProbeWorkerResult := do
   let debugMode := debug || verbose
   let appPath ← IO.appPath
   let proc ← IO.Process.output {
     cmd := appPath.toString
-    args := #["__probe_file__", filePath.toString,
-      boolArg filterVerboseSteps, boolArg debugMode, boolArg verbose] ++ probeTactics
+    args := #["__probe_file__", filePath.toString, boolArg debugMode, boolArg verbose] ++ probeTactics
   }
   unless proc.stderr.isEmpty do
     IO.eprint proc.stderr
@@ -51,9 +49,8 @@ def analyzeFileIsolated
 
 def runProbeWorkerCli (args : List String) : IO UInt32 := do
   match args with
-  | fileArg :: filterArg :: debugArg :: verboseArg :: tacticArgs =>
+  | fileArg :: debugArg :: verboseArg :: tacticArgs =>
     let filePath : System.FilePath := fileArg
-    let filterVerboseSteps := parseBoolArg filterArg
     let debugMode := parseBoolArg debugArg
     let verbose := parseBoolArg verboseArg
     let probeAttempts ← IO.mkRef (0 : Nat)
@@ -65,7 +62,7 @@ def runProbeWorkerCli (args : List String) : IO UInt32 := do
             let mark := if succeeded then "✓" else "✗"
             IO.println s!"  Probe {mark} {line}:{col} — `{tactic}`"
       else none
-    let results ← analyzeFile filePath tacticArgs.toArray filterVerboseSteps (onProbe := probeLog) (verbose := verbose)
+    let results ← analyzeFile filePath tacticArgs.toArray (onProbe := probeLog) (verbose := verbose)
     let payload : ProbeWorkerResult := {
       results := results
       probeAttempts := ← probeAttempts.get
@@ -74,7 +71,7 @@ def runProbeWorkerCli (args : List String) : IO UInt32 := do
     IO.println (Lean.toJson payload).compress
     pure 0
   | _ =>
-    IO.eprintln "usage: __probe_file__ <file> <filterVerboseSteps> <debug> <verbose> [tactic ...]"
+    IO.eprintln "usage: __probe_file__ <file> <debug> <verbose> [tactic ...]"
     pure 2
 
 -- ============================================================
