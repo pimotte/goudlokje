@@ -378,6 +378,37 @@ def testShortcutsNotDetectedInNonVerboseFile : IO Unit := do
       s!"testShortcutsNotDetectedInNonVerboseFile: expected 0 shortcuts in non-Verbose file, \
         got {results.size} at:{detail}")
 
+/-- Regression test for the internal elaboration artifact bug (sheet1_subset.lean #2).
+    Before the fix: `collectTacticInfos` probed at internal elaboration artifact positions
+    (e.g. Lean.Parser.Tactic.applyRfl, skip, simp, first, tacticTry_) that share the same
+    source position as user-facing Verbose tactics. These internal nodes have `goalsBefore`
+    and `isSyntheticTacticContainer` doesn't filter them, so they were incorrectly collected
+    as probe positions. This produced false-positive shortcuts like
+    "unexpected shortcut — tactic `We conclude by hypothesis` closes the goal" even though
+    inserting `We conclude by hypothesis` at those positions gives "This does not conclude".
+
+    The fix adds `isUserFacingVerboseTactic` to `collectTacticInfos`, so only user-facing
+    Verbose tactics (Let's first/now/that prove, We conclude by, Since we get/conclude, etc.)
+    are collected, and internal elaboration artifacts (Lean.Parser.Tactic.*) are filtered out.
+
+    This test uses the `Since...we get that` + `Since...we conclude that` exercise which
+    is NOT opaque and NOT a step boundary. Without the fix, the `Since...we get that` step
+    could produce internal elaboration artifact positions that would be incorrectly probed.
+    With the fix, only the user-facing `Since...we conclude that` position is collected. -/
+def testNoInternalElaborationArtifactShortcuts : IO Unit := do
+  let fixturePath : System.FilePath :=
+    "TestSuite/Fixtures/VerboseSinceWeConclude.lean"
+  -- Probe with "We conclude by hypothesis" — should find no shortcuts at internal
+  -- elaboration artifact positions.
+  let results ← analyzeFile fixturePath #["We conclude by hypothesis"]
+    (filterVerboseSteps := true)
+  unless results.isEmpty do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column}") ""
+    throw (IO.userError
+      s!"testNoInternalElaborationArtifactShortcuts: expected 0 shortcuts \
+        (internal elaboration artifacts must not be probed), \
+        got {results.size} at:{detail}")
+
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
   testNoTacticsNoResults;    IO.println "  ✓ testNoTacticsNoResults"
@@ -418,5 +449,7 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testShortcutsNotDetectedInNonVerboseFile"
   testNoUnclassifiedTacticKinds;
                              IO.println "  ✓ testNoUnclassifiedTacticKinds"
+  testNoInternalElaborationArtifactShortcuts;
+                             IO.println "  ✓ testNoInternalElaborationArtifactShortcuts"
 
 end TestSuite.Analysis
