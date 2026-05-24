@@ -132,6 +132,21 @@ private def isUserFacingVerboseTactic (kind : String) : Bool :=
   -- Verbose Fix tactics (user-facing)
   kind == "tacticFix__"                                           ||
   kind == "tacticFix₁__" ||
+  -- Verbose We-apply / We-proceed tactics (user-facing)
+  kind == "tacticWeCombine_And"                                   ||
+  kind == "tacticWeApply_"                                        ||
+  kind == "tacticWeApply_To_"                                     ||
+  kind == "tacticWeProceedUsing_"                                 ||
+  kind == "tacticWeProceedDependingOn_"                           ||
+  kind == "tacticWeRename_To___"                                  ||
+  kind == "tacticWeUnfold___"                                     ||
+  kind == "tacticWeRewriteUsing___"                               ||
+  kind == "tacticWeRewriteUsing_Everywhere"                       ||
+  kind == "tacticSet_:=_" ||
+  -- Verbose We-manipulate tactics (user-facing)
+  kind == "tacticWeContrapose"                                    ||
+  kind == "tacticWeContraposeSimply"                              ||
+  kind == "tacticWePushTheNegation__" ||
   -- Regular Mathlib tactics (keep these for Waterproof+Verbose proofs)
   kind.startsWith "Mathlib." ||
   -- Other regular Lean tactics that are NOT internal elaboration artifacts.
@@ -240,7 +255,10 @@ private def isVerboseOpaqueSubtree (ti : TacticInfo) : Bool :=
   k == "tacticItSufficesToProveThat_" ||
   k == "Verbose.English.tacticSince_ItSufficesToProveThat_" ||
   k == "Verbose.English.tacticItSufficesToProveThat_" ||
-  k == "tacticWeCompute_"
+  k == "tacticWeCompute_" ||
+  k == "tacticWeContrapose" ||
+  k == "tacticWeContraposeSimply" ||
+  k == "tacticWePushTheNegation__"
 
 /-- Collect (ContextInfo, TacticInfo) pairs from an InfoTree.
     We use `PartialContextInfo.mergeIntoOuter?` to resolve the full `ContextInfo`.
@@ -360,7 +378,14 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "Verbose.English.tacticItSufficesToProveThat_"          ||
   k == "Verbose.NameLess.tacticAssumeThat__"                    ||
   k == "Verbose.NameLess.tacticAssumeForContradictionThat__"    ||
-  k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
+  k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"    ||
+  k == "tacticLet'sProveTheContrapositive:_"                      ||
+  k == "tacticBy_ItSufficesToProveThat__And"                      ||
+  k == "tacticBy_WeGet__"                                         ||
+  k == "tacticBy_WeChoose__"                                       ||
+  k == "tacticStrongAssumption"                                    ||
+  k == "Verbose.English.tacticSince_WeGet_"                        ||
+  k == "Verbose.English.tacticSince_WeChoose__"                    ||
 
 /-- When `filterVerboseSteps` is true, filter tactic positions from declarations that
     contain Verbose step boundaries (e.g. `Let's first prove that …`).
@@ -600,9 +625,19 @@ def classifyTacticKinds (filePath : System.FilePath) :
             k == "tacticLet'sProveThat_"                                  ||
             k == "Verbose.NameLess.tacticAssumeThat__"                    ||
             k == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
-            k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
+            k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_" ||
+            k == "tacticLet'sProveTheContrapositive:_"                  ||
+            k == "tacticBy_ItSufficesToProveThat__And"                  ||
+            k == "tacticBy_WeGet__"                                     ||
+            k == "tacticBy_WeChoose__"                                   ||
+            k == "tacticStrongAssumption"                                ||
+            k == "Verbose.English.tacticSince_WeGet_"                    ||
+            k == "Verbose.English.tacticSince_WeChoose__"                ||
     then .boundary
-        else if k == "tacticWeCompute_"
+        else if k == "tacticWeCompute_"    ||
+            k == "tacticWeContrapose"       ||
+            k == "tacticWeContraposeSimply" ||
+            k == "tacticWePushTheNegation__"
         then .opaque
     -- Children of opaque subtrees: only reachable via collectAllTacticInfos
     -- (which bypasses opaque pruning).  Never collected in real operation.
@@ -627,7 +662,20 @@ def classifyTacticKinds (filePath : System.FilePath) :
             k == "Verbose.English.tacticSince_WeConcludeThat_" ||
             k == "Verbose.English.tacticSince_WeGetThat_Hence_" ||
             k == "tacticFix__"                                     ||
-            k == "tacticFix₁__"
+            k == "tacticFix₁__"                                      ||
+            k == "tacticWeCombine_And"                              ||
+            k == "tacticWeApply_"                                   ||
+            k == "tacticWeApply_To_"                                ||
+            k == "tacticWeProceedUsing_"                            ||
+            k == "tacticWeProceedDependingOn_"                      ||
+            k == "tacticWeRename_To___"                             ||
+            k == "tacticWeUnfold___"                                ||
+            k == "tacticWeRewriteUsing___"                          ||
+            k == "tacticWeRewriteUsing_Everywhere"                  ||
+            k == "tacticSet_:=_"                                    ||
+            k == "tacticWeContrapose"                               ||
+            k == "tacticWeContraposeSimply"                         ||
+            k == "tacticWePushTheNegation__"
     then .userTactic
     else .unknown
   let kindMap := allInfos.foldl (fun acc (_, ti) =>
