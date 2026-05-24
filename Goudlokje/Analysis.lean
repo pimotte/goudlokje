@@ -117,6 +117,7 @@ private def isUserFacingVerboseTactic (kind : String) : Bool :=
   kind == "tacticLet'sNowProveThat_"                              ||
   kind == "tacticLet'sProveThat_Works_"                           ||
   kind == "tacticLet'sProveThat_"                                 ||
+  kind == "tacticItSufficesToProveThat_"                          ||
   -- Verbose assumption tactics
   kind == "Verbose.NameLess.tacticAssumeThat__"                   ||
   kind == "Verbose.NameLess.tacticAssumeForContradictionThat__"   ||
@@ -234,6 +235,7 @@ private def isVerboseOpaqueSubtree (ti : TacticInfo) : Bool :=
   let k := ti.stx.getKind.toString
   k == "tacticLet'sProveThat_" ||
   k == "tacticLet'sProveThat_Works_" ||
+  k == "tacticItSufficesToProveThat_" ||
   k == "tacticWeCompute_"
 
 /-- Collect (ContextInfo, TacticInfo) pairs from an InfoTree.
@@ -349,6 +351,7 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "tacticLet'sNowProveThat_"                               ||
   k == "tacticLet'sProveThat_Works_"                            ||
   k == "tacticLet'sProveThat_"                                  ||
+  k == "tacticItSufficesToProveThat_"                          ||
   k == "Verbose.NameLess.tacticAssumeThat__"                    ||
   k == "Verbose.NameLess.tacticAssumeForContradictionThat__"    ||
   k == "Verbose.English.tacticWeDiscussDependingOnWhether_Or_"
