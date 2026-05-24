@@ -385,7 +385,7 @@ private def isVerboseStepBoundary (ti : TacticInfo) : Bool :=
   k == "tacticBy_WeChoose__"                                       ||
   k == "tacticStrongAssumption"                                    ||
   k == "Verbose.English.tacticSince_WeGet_"                        ||
-  k == "Verbose.English.tacticSince_WeChoose__"                    ||
+  k == "Verbose.English.tacticSince_WeChoose__"
 
 /-- When `filterVerboseSteps` is true, filter tactic positions from declarations that
     contain Verbose step boundaries (e.g. `Let's first prove that …`).
@@ -632,7 +632,7 @@ def classifyTacticKinds (filePath : System.FilePath) :
             k == "tacticBy_WeChoose__"                                   ||
             k == "tacticStrongAssumption"                                ||
             k == "Verbose.English.tacticSince_WeGet_"                    ||
-            k == "Verbose.English.tacticSince_WeChoose__"                ||
+            k == "Verbose.English.tacticSince_WeChoose__"
     then .boundary
         else if k == "tacticWeCompute_"    ||
             k == "tacticWeContrapose"       ||
