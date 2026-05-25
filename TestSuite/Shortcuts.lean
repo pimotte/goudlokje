@@ -126,6 +126,60 @@ def testWithinStepEditDoesNotBreakMatching : IO Unit := do
   | .expected _   => pure ()
   | .unexpected _ => throw (IO.userError "testWithinStepEdit: should match ignoring tacticIndexInStep")
 
+/-- Test #5: Step boundary removal — shortcut goes stale.
+    Expected entry at step 2, but the proof has no step 2 (step boundary removed).
+    The shortcut at step 1 should still match (same exercise+tactic). -/
+def testStepBoundaryRemovalCreatesStale : IO Unit := do
+  -- Found: shortcut at step 1 (step boundary removed, step 2 merged into step 1)
+  let found := #[mkProbe "ex" 1 2 "decide"]
+  -- Expected: shortcut was at step 2 (step boundary was removed)
+  let tf : TestFile := { expected := #[mkExpected "ex" 2 1 "decide"] }
+  let result := classify found tf
+  -- The step 1 tactic doesn't match the expected step 2 → unexpected
+  assertEq 1 result.shortcuts.size "testStepRemoval: shortcuts"
+  match result.shortcuts[0]! with
+  | .unexpected _ => pure ()
+  | .expected _   => throw (IO.userError "testStepRemoval: should be unexpected at wrong step")
+  -- The expected entry at step 2 is stale (step removed)
+  assertEq 1 result.stale.size "testStepRemoval: stale"
+
+/-- Test #6: Step boundary insertion — new step created.
+    Expected entry at step 2 stays expected; new step 3 has an unexpected shortcut. -/
+def testStepBoundaryInsertionCreatesUnexpected : IO Unit := do
+  -- Found: shortcut at old step 2 AND new step 3
+  let found := #[
+    mkProbe "ex" 2 1 "decide",   -- still at step 2, expected
+    mkProbe "ex" 3 1 "decide"    -- new step 3, unexpected
+  ]
+  -- Expected: only step 2 was recorded
+  let tf : TestFile := { expected := #[mkExpected "ex" 2 1 "decide"] }
+  let result := classify found tf
+  assertEq 2 result.shortcuts.size "testStepInsertion: shortcuts"
+  let unexpectedCount := result.shortcuts.filter
+    (fun s => match s with | .unexpected _ => true | _ => false) |>.size
+  assertEq 1 unexpectedCount "testStepInsertion: one unexpected"
+  assertEq 0 result.stale.size "testStepInsertion: no stale"
+
+/-- Test #8: Two shortcuts at the same step with the same tactic text.
+    Both map to the same {exercise, stepNumber, tactic} key, so only one
+    entry is stored in the test file. If one disappears, the remaining one
+    still matches. -/
+def testTwoShortcutsSameStepSameTactic : IO Unit := do
+  -- Two probe results at step 2 with identical tactic
+  let found := #[
+    mkProbe "foo" 2 1 "trivial",
+    mkProbe "foo" 2 3 "trivial"
+  ]
+  -- Test file records one of them
+  let tf : TestFile := { expected := #[mkExpected "foo" 2 1 "trivial"] }
+  let result := classify found tf
+  assertEq 2 result.shortcuts.size "testTwoSame: size"
+  assertEq 0 result.stale.size     "testTwoSame: stale"
+  -- Both should be classified as expected (matching is many-to-one)
+  let expectedCount := result.shortcuts.filter
+    (fun s => match s with | .expected _ => true | _ => false) |>.size
+  assertEq 2 expectedCount "testTwoSame: both expected"
+
 def runAll : IO Unit := do
   testEmptyFoundEmptyExpected;       IO.println "  ✓ testEmptyFoundEmptyExpected"
   testUnexpectedShortcut;            IO.println "  ✓ testUnexpectedShortcut"
@@ -138,5 +192,9 @@ def runAll : IO Unit := do
   testTacticIndexNotUsedForMatching; IO.println "  ✓ testTacticIndexNotUsedForMatching"
   testMultipleStale;                 IO.println "  ✓ testMultipleStale"
   testWithinStepEditDoesNotBreakMatching; IO.println "  ✓ testWithinStepEditDoesNotBreakMatching"
+  testStepBoundaryRemovalCreatesStale;  IO.println "  ✓ testStepBoundaryRemovalCreatesStale"
+  testStepBoundaryInsertionCreatesUnexpected;
+                                     IO.println "  ✓ testStepBoundaryInsertionCreatesUnexpected"
+  testTwoShortcutsSameStepSameTactic;   IO.println "  ✓ testTwoShortcutsSameStepSameTactic"
 
 end TestSuite.Shortcuts

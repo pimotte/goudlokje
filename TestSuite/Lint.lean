@@ -175,6 +175,57 @@ def testB1AlwaysUnexpectedInClassify : IO Unit := do
   unless cr.stale.any (fun s => s.entry.check == "B1") do
     throw (IO.userError "testB1AlwaysUnexpected: matching B1 TestFile entry should be stale")
 
+/-- Test #11: Lint fuzzy matching — position shifted within ±5 lines.
+    The expected entry is at line 10, but the actual violation is at line 8 (2 lines above).
+    Fuzzy search should find it because the check matches and the tactic text is contained.
+    The result should be classified as `.expected`. -/
+def testFuzzyLintMatchNear : IO Unit := do
+  -- Actual violation found at line 8
+  let violations : Array LintResult := #[
+    { file := "a.lean", line := 8, column := 0, check := "B2", message := "Fix x : Nat — type annotation" }
+  ]
+  -- Expected entry at line 10 (2 lines above the actual)
+  let tf : TestFile := { expected := #[], lint := #[
+    { file := "a.lean", line := 10, column := 0, check := "B2", message := "Fix x : Nat" }
+  ]}
+  let cr := classifyLint violations tf
+  -- No stale entries (fuzzy match found the entry)
+  unless cr.stale.isEmpty do
+    throw (IO.userError
+      s!"testFuzzyLintMatchNear: expected 0 stale, got {cr.stale.size}")
+  -- The violation should be classified as expected (fuzzy matched)
+  unless cr.violations.any (fun v => match v with | .expected r => r.line == 8 && r.check == "B2" | _ => false) do
+    throw (IO.userError "testFuzzyLintMatchNear: B2@8 should be classified as expected")
+  -- Verify no unexpected entries
+  unless cr.violations.all (fun v => match v with | .expected _ => true | _ => false) do
+    throw (IO.userError "testFuzzyLintMatchNear: no violations should be unexpected")
+
+/-- Test #12: Lint fuzzy matching — position beyond ±5 lines.
+    The expected entry is at line 10, but the actual violation is at line 20 (10 lines away).
+    Fuzzy search ±5 lines should NOT find it.
+    The result should be classified as `.unexpected`. -/
+def testFuzzyLintMatchFar : IO Unit := do
+  -- Actual violation found at line 20
+  let violations : Array LintResult := #[
+    { file := "a.lean", line := 20, column := 0, check := "B2", message := "Fix x : Nat — type annotation" }
+  ]
+  -- Expected entry at line 10 (10 lines below, beyond ±5 range)
+  let tf : TestFile := { expected := #[], lint := #[
+    { file := "a.lean", line := 10, column := 0, check := "B2", message := "Fix x : Nat" }
+  ]}
+  let cr := classifyLint violations tf
+  -- No stale entries (the expected entry is at line 10, but the violation is at line 20
+  -- and fuzzy search can't reach it — however, the stale check uses exact position match,
+  -- so the entry at line 10 is still stale since no violation was found at/near line 10)
+  -- Actually: the violation is at line 20, the entry is at line 10. Fuzzy match won't find
+  -- line 10 from line 20 (distance 10 > 5). So the entry at line 10 is stale.
+  unless cr.stale.size == 1 do
+    throw (IO.userError
+      s!"testFuzzyLintMatchFar: expected 1 stale entry, got {cr.stale.size}")
+  -- The violation should be classified as unexpected (fuzzy match failed)
+  unless cr.violations.any (fun v => match v with | .unexpected r => r.line == 20 && r.check == "B2" | _ => false) do
+    throw (IO.userError "testFuzzyLintMatchFar: B2@20 should be classified as unexpected")
+
 def runAll : IO Unit := do
   testAllLintChecks
   IO.println "  ✓ testAllLintChecks"
@@ -194,5 +245,9 @@ def runAll : IO Unit := do
   IO.println "  ✓ testLintFileIsolatedMatchesDirectCall"
   testB1AlwaysUnexpectedInClassify
   IO.println "  ✓ testB1AlwaysUnexpectedInClassify"
+  testFuzzyLintMatchNear
+  IO.println "  ✓ testFuzzyLintMatchNear"
+  testFuzzyLintMatchFar
+  IO.println "  ✓ testFuzzyLintMatchFar"
 
 end TestSuite.Lint

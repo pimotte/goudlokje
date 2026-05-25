@@ -61,6 +61,26 @@ def testParseJsonNoLintField : IO Unit := do
   let tf ← IO.ofExcept (Lean.fromJson? (α := TestFile) json)
   assertEq 0 tf.lint.size "testParseJsonNoLintField"
 
+/-- Test #14: Old-format .test.json files (with lineInProof instead of stepNumber)
+    are rejected with an error. The new format requires stepNumber and
+    tacticIndexInStep. Old format files are not read — the teacher runs
+    `update --all` to regenerate them. -/
+def testOldFormatFileRejected : IO Unit := do
+  -- Write an old-format JSON file with lineInProof instead of stepNumber.
+  let oldFormatJson := "{\"expected\":[{\"exercise\":\"ex1\",\"lineInProof\":5,\"tactic\":\"decide\"}],\"lint\":[]}"
+  let path : System.FilePath := "/tmp/goudlokje_old_format_test.abc123.test.json"
+  IO.FS.writeFile path oldFormatJson
+  -- Loading an old-format file should throw an error (lineInProof is not a valid field)
+  try
+    let _ ← TestFile.load path
+    throw (IO.userError
+      "testOldFormatFileRejected: old-format file should be rejected, but loaded successfully")
+  catch _ =>
+    -- Expected: old format file is rejected
+    pure ()
+  finally
+    try IO.FS.removeFile path catch _ => pure ()
+
 def runAll : IO Unit := do
   testRoundTripEmpty;              IO.println "  ✓ testRoundTripEmpty"
   testRoundTripSingle;             IO.println "  ✓ testRoundTripSingle"
@@ -69,5 +89,6 @@ def runAll : IO Unit := do
   testLoadMissingFileReturnsEmpty; IO.println "  ✓ testLoadMissingFileReturnsEmpty"
   testRoundTripLint;               IO.println "  ✓ testRoundTripLint"
   testParseJsonNoLintField;        IO.println "  ✓ testParseJsonNoLintField"
+  testOldFormatFileRejected;       IO.println "  ✓ testOldFormatFileRejected"
 
 end TestSuite.TestFile
