@@ -400,21 +400,53 @@ structure LintClassificationResult where
 private def lintMatchesEntry (r : LintResult) (e : ExpectedLintViolation) : Bool :=
   e.file == r.file && e.line == r.line && e.column == r.column && e.check == r.check
 
+/-- Try a fuzzy match for a lint result against expected entries.
+    Searches ±5 lines around the expected position for an entry with the same
+    check and matching full tactic text in the message field.
+    Returns the fuzzy-matched expected entry if found, none otherwise. -/
+private def findFuzzyLintMatch (r : LintResult) (tf : TestFile) : Option ExpectedLintViolation :=
+  let offsets : List Int := [0, 1, 2, 3, 4, 5, -1, -2, -3, -4, -5]
+  let rec go (rest : List Int) (acc : Option ExpectedLintViolation) : Option ExpectedLintViolation :=
+    match rest with
+    | [] => acc
+    | h :: t =>
+      if acc.isSome then acc
+      else
+        let lineOffset := if h < 0 then (-h).toNat else h.toNat
+        let targetLine := r.line + lineOffset
+        if targetLine > 0 then
+          let fuzzyMatch := tf.lint.find? fun e =>
+            e.file == r.file && e.line == targetLine && e.check == r.check &&
+            r.message.contains e.message
+          go t (if fuzzyMatch.isSome then fuzzyMatch else none)
+        else go t acc
+  go offsets none
+
 /-- Classify lint violations against the expected lint entries in the test file.
 
     B1 violations are always classified as `.unexpected` — they cannot be suppressed
     via the test file.  B1 entries in the test file are always considered stale
-    (they should never have been added and must be removed). -/
+    (they should never have been added and must be removed).
+
+    For non-B1 violations: exact position match first, then fuzzy search ±5 lines
+    for same check + same tactic text. Fuzzy matches are treated as expected. -/
 def classifyLint (found : Array LintResult) (tf : TestFile) : LintClassificationResult :=
-  let violations := found.map fun r =>
-    -- B1 cannot be suppressed; it is always unexpected regardless of the test file.
-    if r.check == "B1" then .unexpected r
-    else if tf.lint.any (lintMatchesEntry r) then .expected r
-    else .unexpected r
+  let classifyOne (r : LintResult) : LintViolationResult :=
+    if r.check == "B1" then
+      .unexpected r
+    else if tf.lint.any (lintMatchesEntry r) then
+      .expected r
+    else if findFuzzyLintMatch r tf |>.isSome then
+      .expected r
+    else
+      .unexpected r
+  let violations := found.map classifyOne
   let stale := tf.lint.filterMap fun e =>
     -- B1 entries are always stale: B1 violations cannot be documented in the test file.
     if e.check == "B1" then some { entry := e }
-    else if found.any (fun r => lintMatchesEntry r e) then none
+    else if found.any (fun r =>
+      let fuzzy := findFuzzyLintMatch r tf |>.isSome
+      lintMatchesEntry r e || fuzzy) then none
     else some { entry := e }
   { violations, stale }
 

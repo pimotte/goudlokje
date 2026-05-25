@@ -21,10 +21,15 @@ structure ClassificationResult where
   stale     : Array StaleEntry
   deriving Repr
 
-/-- Classify probe results against expected shortcuts in the test file. -/
+/-- Classify probe results against expected shortcuts in the test file.
+    Matching uses {exercise, stepNumber, tactic}. tacticIndexInStep is stored but
+    not used for matching, so within-step edits (adding/removing tactics) do not
+    break existing entries. -/
 def classify (found : Array ProbeResult) (tf : TestFile) : ClassificationResult :=
   let matchesEntry (r : ProbeResult) (e : ExpectedShortcut) : Bool :=
-    e.exercise == r.exercise && e.lineInProof == r.lineInProof && e.tactic == r.tactic
+    e.exercise == r.id.exercise &&
+    e.stepNumber == r.id.stepNumber &&
+    e.tactic == r.tactic
   let shortcuts := found.map fun r =>
     if tf.expected.any (matchesEntry r) then .expected r else .unexpected r
   let stale := tf.expected.filterMap fun e =>
@@ -36,12 +41,12 @@ def classify (found : Array ProbeResult) (tf : TestFile) : ClassificationResult 
 def printShortcutResult (r : ShortcutResult) : IO Unit :=
   match r with
   | .unexpected p =>
-    IO.eprintln s!"ERROR: unexpected shortcut [{p.exercise}:{p.lineInProof}] in {p.file} — tactic `{p.tactic}` closes the goal"
+    IO.eprintln s!"ERROR: unexpected shortcut [{p.exercise}: step {p.id.stepNumber}, tactic {p.id.tacticIndexInStep}] in {p.file} — tactic `{p.tactic}` closes the goal"
   | .expected p =>
-    IO.println s!"OK: expected shortcut [{p.exercise}:{p.lineInProof}] — tactic `{p.tactic}`"
+    IO.println s!"OK: expected shortcut [{p.exercise}: step {p.id.stepNumber}, tactic {p.id.tacticIndexInStep}] — tactic `{p.tactic}`"
 
 /-- Pretty-print a stale entry warning to stdout. -/
 def printStaleEntry (s : StaleEntry) : IO Unit :=
-  IO.eprintln s!"WARN: stale entry in test file — [{s.entry.exercise}:{s.entry.lineInProof}] tactic `{s.entry.tactic}` no longer closes the goal"
+  IO.eprintln s!"WARN: stale entry in test file — [{s.entry.exercise}: step {s.entry.stepNumber}, tactic {s.entry.tacticIndexInStep}] tactic `{s.entry.tactic}` no longer closes the goal"
 
 end Goudlokje

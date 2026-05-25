@@ -3,11 +3,13 @@ import Lean.Data.Json.FromToJson
 
 namespace Goudlokje
 
-/-- A shortcut recorded as expected in the `.test.json` companion file. -/
+/-- A shortcut recorded as expected in the `.test.json` companion file.
+    Verbose proofs only. Non-Verbose proofs produce no shortcut entries. -/
 structure ExpectedShortcut where
-  exercise    : String
-  lineInProof : Nat
-  tactic      : String
+  exercise        : String
+  stepNumber      : Nat
+  tacticIndexInStep : Nat
+  tactic          : String
   deriving Repr, BEq, Inhabited
 
 /-- A lint violation documented as expected (suppressed) in the `.test.json` companion file. -/
@@ -28,16 +30,18 @@ structure TestFile where
 instance : Lean.FromJson ExpectedShortcut where
   fromJson? json := do
     return {
-      exercise    := ← Lean.fromJson? (← json.getObjVal? "exercise")
-      lineInProof := ← Lean.fromJson? (← json.getObjVal? "lineInProof")
-      tactic      := ← Lean.fromJson? (← json.getObjVal? "tactic")
+      exercise        := ← Lean.fromJson? (← json.getObjVal? "exercise")
+      stepNumber      := ← Lean.fromJson? (← json.getObjVal? "stepNumber")
+      tacticIndexInStep := ← Lean.fromJson? (← json.getObjVal? "tacticIndexInStep")
+      tactic          := ← Lean.fromJson? (← json.getObjVal? "tactic")
     }
 
 instance : Lean.ToJson ExpectedShortcut where
   toJson s := Lean.Json.mkObj [
-    ("exercise",    Lean.toJson s.exercise),
-    ("lineInProof", Lean.toJson s.lineInProof),
-    ("tactic",      Lean.toJson s.tactic)
+    ("exercise",         Lean.toJson s.exercise),
+    ("stepNumber",       Lean.toJson s.stepNumber),
+    ("tacticIndexInStep", Lean.toJson s.tacticIndexInStep),
+    ("tactic",           Lean.toJson s.tactic)
   ]
 
 instance : Lean.FromJson ExpectedLintViolation where
@@ -74,27 +78,14 @@ instance : Lean.ToJson TestFile where
     ("lint",     Lean.toJson tf.lint)
   ]
 
-/-- Load a TestFile; returns an empty TestFile if the file does not exist.
-    Old-format files (pre-Issue-9, with file/line/column keys) are detected and
-    treated as empty — a warning is printed and the file is ignored so that the
-    rest of the check run can continue. -/
+/-- Load a TestFile; returns an empty TestFile if the file does not exist. -/
 def TestFile.load (path : System.FilePath) : IO TestFile := do
   if !(← path.pathExists) then return { expected := #[] }
   let contents ← IO.FS.readFile path
   let json ← IO.ofExcept (Lean.Json.parse contents)
   match Lean.fromJson? (α := TestFile) json with
   | .ok tf => return tf
-  | .error e =>
-    let isOldFormat : Bool :=
-      match json.getObjVal? "expected" with
-      | .ok (Lean.Json.arr items) =>
-          items.any fun item => (item.getObjVal? "file").isOk && (item.getObjVal? "line").isOk
-      | _ => false
-    if isOldFormat then
-      IO.eprintln s!"Warning: {path} uses old test file format; run `lake exe goudlokje update` to regenerate."
-      return { expected := #[] }
-    else
-      throw (IO.userError e)
+  | .error e => throw (IO.userError e)
 
 /-- Persist a TestFile to disk as pretty-printed JSON. -/
 def TestFile.save (tf : TestFile) (path : System.FilePath) : IO Unit :=

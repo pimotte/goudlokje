@@ -76,7 +76,7 @@ def testNoDuplicateResults : IO Unit := do
         let rj := results[j]!
         if ri == rj then
           throw (IO.userError
-            s!"testNoDuplicateResults: duplicate [{ri.exercise}:{ri.lineInProof}] — `{ri.tactic}`")
+            s!"testNoDuplicateResults: duplicate [{ri.exercise}: step {ri.id.stepNumber}, tactic {ri.id.tacticIndexInStep}] — `{ri.tactic}`")
 
 /-- Verbose step filtering: `decide` is a shortcut at both the `show` (noop) and
     `norm_num` positions within each step body. The filter keeps only the first

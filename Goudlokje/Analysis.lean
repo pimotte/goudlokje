@@ -10,13 +10,23 @@ namespace Goudlokje
 
 open Lean Elab Meta
 
-/-- A position in a source file where a probe tactic succeeded. -/
+/-- Semantic identifier for a shortcut probe position.
+    Identifies a tactic by its logical role in a proof, independent
+    of source-line positioning. tacticIndexInStep is stored but not used for matching. -/
+structure ShortcutId where
+  exercise        : String
+  stepNumber      : Nat
+  tacticIndexInStep : Nat
+  deriving Repr, BEq, Inhabited, ToJson, FromJson
+
+/-- A probe result now carries a semantic ID alongside the raw position.
+    Verbose proofs only. Non-Verbose proofs produce no shortcut entries. -/
 structure ProbeResult where
   file        : String
-  line        : Nat
+  line        : Nat     -- absolute position (kept for lint; shortcuts use stepNumber/tacticIndexInStep)
   column      : Nat
   exercise    : String
-  lineInProof : Nat
+  id          : ShortcutId
   tactic      : String
   deriving Repr, BEq, Inhabited, ToJson, FromJson
 
@@ -734,11 +744,14 @@ private def analyzeInput
     if resolvedTrees.any treeContainsVerbose then
       let mut commandProbeAttempts := 0
       let mut commandSuccesses := 0
-      -- Track the current declaration group to compute proof-relative line numbers.
-      -- `tacticInfos` is sorted by source position after the filter pipeline, so
-      -- the first tactic seen for each group gives the proof start line.
+      -- Track the current declaration group to compute semantic positions.
+      -- `tacticInfos` is sorted by source position after the filter pipeline.
+      -- We assign stepNumber based on isVerboseStepBoundary markers, and
+      -- tacticIndexInStep within each step. Step counters reset at each
+      -- declaration boundary (fixes the multi-proof-per-declaration offset bug).
       let mut currentDecl : Option Name := none
-      let mut proofStartLine : Nat := 1
+      let mut stepNumber : Nat := 1
+      let mut tacticIndexInStep : Nat := 1
       let mut exerciseName : String := "example"
       let mut groupSeen : Bool := false
       for (ci, ti) in tacticInfos do
@@ -746,7 +759,8 @@ private def analyzeInput
         let decl := ci.parentDecl?
         if !groupSeen || decl != currentDecl then
           currentDecl := decl
-          proofStartLine := pos.line
+          stepNumber := 1
+          tacticIndexInStep := 1
           groupSeen := true
           exerciseName :=
             let fromSource := findExerciseName sourceForNames pos.line
@@ -754,7 +768,13 @@ private def analyzeInput
             else match decl with
               | some name => name.toString
               | none      => "example"
-        let lineInProof := pos.line - proofStartLine + 1
+        -- Update step tracking: boundary tactics increment the step number
+        -- for subsequent tactics; within-step tactics increment tacticIndexInStep
+        if isVerboseStepBoundary ti then
+          stepNumber := stepNumber + 1
+          tacticIndexInStep := 1
+        else
+          tacticIndexInStep := tacticIndexInStep + 1
         for goal in ti.goalsBefore do
           for tacticStr in probeTactics do
             commandProbeAttempts := commandProbeAttempts + 1
@@ -773,7 +793,7 @@ private def analyzeInput
                   line        := pos.line
                   column      := pos.column
                   exercise    := exerciseName
-                  lineInProof := lineInProof
+                  id          := { exercise := exerciseName, stepNumber, tacticIndexInStep }
                   tactic      := tacticStr
                 }
     state := newState

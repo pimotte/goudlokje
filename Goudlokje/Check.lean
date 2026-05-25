@@ -64,15 +64,28 @@ def runCheck
       IO.println s!"  Found {summary.probeResultCount} probe result(s), {summary.shortcuts.size} shortcut(s), {summary.stale.size} stale entry/entries"
       if summary.probeAttempts == 0 && !cfg.tactics.isEmpty then
         IO.println s!"  Warning: no tactic positions found in {ws.sourcePath} — verify all imports are available (run via `lake exe goudlokje`)"
+    -- Count expected shortcuts (not listed individually, only in summary).
+    let expectedCount := summary.shortcuts.foldl (fun acc shortcut =>
+      match shortcut with
+      | .expected _ => acc + 1
+      | .unexpected _ => acc) 0
+    -- Report unexpected shortcuts.
     for r in summary.shortcuts do
-      printShortcutResult r
+      match r with
+      | .expected _ => pure ()
+      | .unexpected p => IO.eprintln s!"⚠ [{p.exercise}: step {p.id.stepNumber}, tactic {p.id.tacticIndexInStep}] — `{p.tactic}` (unexpected)"
+    -- Report stale shortcuts.
     for s in summary.stale do
-      printStaleEntry s
-    -- Report lint results.
+      IO.eprintln s!"⚠ [{s.entry.exercise}: step {s.entry.stepNumber}, tactic {s.entry.tacticIndexInStep}] — `{s.entry.tactic}` (stale)"
+    -- Report lint violations.
     for v in summary.lintResult.violations do
       printLintViolationResult v
     for s in summary.lintResult.stale do
       printStaleLintEntry s
+    -- Summary.
+    IO.println s!"✓ {expectedCount} expected"
+    if summary.stale.size > 0 then IO.println s!"⚠ {summary.stale.size} stale"
+    if summary.unexpectedCount > 0 then IO.println s!"⚠ {summary.unexpectedCount} unexpected"
     unexpectedCount := unexpectedCount + summary.unexpectedCount
     -- Count B1 and B3 lint violations as build failures.
     -- B1 always fails the build (cannot be suppressed); B3 (sorry) is always an error.
