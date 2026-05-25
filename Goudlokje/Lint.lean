@@ -412,8 +412,7 @@ private def findFuzzyLintMatch (r : LintResult) (tf : TestFile) : Option Expecte
     | h :: t =>
       if acc.isSome then acc
       else
-        let lineOffset := if h < 0 then (-h).toNat else h.toNat
-        let targetLine := r.line + lineOffset
+        let targetLine : Nat := (Int.ofNat r.line + h).toNat
         if targetLine > 0 then
           let fuzzyMatch := tf.lint.find? fun e =>
             e.file == r.file && e.line == targetLine && e.check == r.check &&

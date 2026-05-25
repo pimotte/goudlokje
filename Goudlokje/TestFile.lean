@@ -85,7 +85,10 @@ def TestFile.load (path : System.FilePath) : IO TestFile := do
   let json ← IO.ofExcept (Lean.Json.parse contents)
   match Lean.fromJson? (α := TestFile) json with
   | .ok tf => return tf
-  | .error e => throw (IO.userError e)
+  | .error e =>
+    IO.eprintln s!"Error parsing {path}: {e}"
+    IO.eprintln "Run `lake exe goudlokje update --all` to regenerate test files."
+    throw (IO.userError e)
 
 /-- Persist a TestFile to disk as pretty-printed JSON. -/
 def TestFile.save (tf : TestFile) (path : System.FilePath) : IO Unit :=
