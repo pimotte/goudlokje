@@ -16,7 +16,7 @@ def testRoundTripEmpty : IO Unit := do
 
 def testRoundTripSingle : IO Unit := do
   let original : TestFile := {
-    expected := #[{ exercise := "foo", lineInProof := 10, tactic := "ring" }]
+    expected := #[{ exercise := "foo", stepNumber := 1, tacticIndexInStep := 2, tactic := "ring" }]
   }
   let parsed ← IO.ofExcept (Lean.fromJson? (Lean.toJson original))
   assertEq original parsed "testRoundTripSingle"
@@ -24,21 +24,22 @@ def testRoundTripSingle : IO Unit := do
 def testRoundTripMultiple : IO Unit := do
   let original : TestFile := {
     expected := #[
-      { exercise := "exercise_1", lineInProof := 1,  tactic := "ring" },
-      { exercise := "exercise_2", lineInProof := 3,  tactic := "omega" }
+      { exercise := "exercise_1", stepNumber := 1,  tacticIndexInStep := 1, tactic := "ring" },
+      { exercise := "exercise_2", stepNumber := 3,  tacticIndexInStep := 2, tactic := "omega" }
     ]
   }
   let parsed ← IO.ofExcept (Lean.fromJson? (Lean.toJson original))
   assertEq original parsed "testRoundTripMultiple"
 
 def testParseJson : IO Unit := do
-  let raw := "{\"expected\":[{\"exercise\":\"ex1\",\"lineInProof\":5,\"tactic\":\"simp\"}]}"
+  let raw := "{\"expected\":[{\"exercise\":\"ex1\",\"stepNumber\":2,\"tacticIndexInStep\":3,\"tactic\":\"simp\"}]}"
   let json ← IO.ofExcept (Lean.Json.parse raw)
   let tf ← IO.ofExcept (Lean.fromJson? (α := TestFile) json)
-  assertEq 1       tf.expected.size              "testParseJson: size"
-  assertEq "ex1"   tf.expected[0]!.exercise      "testParseJson: exercise"
-  assertEq 5       tf.expected[0]!.lineInProof   "testParseJson: lineInProof"
-  assertEq "simp"  tf.expected[0]!.tactic        "testParseJson: tactic"
+  assertEq 1       tf.expected.size                  "testParseJson: size"
+  assertEq "ex1"   tf.expected[0]!.exercise           "testParseJson: exercise"
+  assertEq 2       tf.expected[0]!.stepNumber         "testParseJson: stepNumber"
+  assertEq 3       tf.expected[0]!.tacticIndexInStep  "testParseJson: tacticIndexInStep"
+  assertEq "simp"  tf.expected[0]!.tactic             "testParseJson: tactic"
 
 def testLoadMissingFileReturnsEmpty : IO Unit := do
   let tf ← TestFile.load "/tmp/goudlokje_test_does_not_exist_abc123.test.json"
@@ -54,20 +55,31 @@ def testRoundTripLint : IO Unit := do
   assertEq original parsed "testRoundTripLint"
 
 def testParseJsonNoLintField : IO Unit := do
-  -- Old format without "lint" field — should default to empty array for backward compatibility.
+  -- "lint" field is optional — should default to empty array.
   let raw := "{\"expected\":[]}"
   let json ← IO.ofExcept (Lean.Json.parse raw)
   let tf ← IO.ofExcept (Lean.fromJson? (α := TestFile) json)
   assertEq 0 tf.lint.size "testParseJsonNoLintField"
 
-def testLoadOldFormatTestFile : IO Unit := do
-  -- Pre-Issue-9 test files used {file, line, column, tactic} instead of {exercise, lineInProof, tactic}.
-  -- Loading such a file should NOT crash; it should be treated as empty (no expected shortcuts).
-  let oldFormatJson := "{\"expected\":[{\"file\":\"foo.lean\",\"line\":5,\"column\":10,\"tactic\":\"ring\"}]}"
-  let path : System.FilePath := "/tmp/goudlokje_old_format_test.test.json"
+/-- Test #14: Old-format .test.json files (with lineInProof instead of stepNumber)
+    are rejected with an error. The new format requires stepNumber and
+    tacticIndexInStep. Old format files are not read — the teacher runs
+    `update --all` to regenerate them. -/
+def testOldFormatFileRejected : IO Unit := do
+  -- Write an old-format JSON file with lineInProof instead of stepNumber.
+  let oldFormatJson := "{\"expected\":[{\"exercise\":\"ex1\",\"lineInProof\":5,\"tactic\":\"decide\"}],\"lint\":[]}"
+  let path : System.FilePath := "/tmp/goudlokje_old_format_test.abc123.test.json"
   IO.FS.writeFile path oldFormatJson
-  let tf ← TestFile.load path
-  assertEq 0 tf.expected.size "testLoadOldFormat: should return empty for old-format file"
+  -- Loading an old-format file should throw an error (lineInProof is not a valid field)
+  try
+    let _ ← TestFile.load path
+    throw (IO.userError
+      "testOldFormatFileRejected: old-format file should be rejected, but loaded successfully")
+  catch _ =>
+    -- Expected: old format file is rejected
+    pure ()
+  finally
+    try IO.FS.removeFile path catch _ => pure ()
 
 def runAll : IO Unit := do
   testRoundTripEmpty;              IO.println "  ✓ testRoundTripEmpty"
@@ -77,6 +89,6 @@ def runAll : IO Unit := do
   testLoadMissingFileReturnsEmpty; IO.println "  ✓ testLoadMissingFileReturnsEmpty"
   testRoundTripLint;               IO.println "  ✓ testRoundTripLint"
   testParseJsonNoLintField;        IO.println "  ✓ testParseJsonNoLintField"
-  testLoadOldFormatTestFile;       IO.println "  ✓ testLoadOldFormatTestFile"
+  testOldFormatFileRejected;       IO.println "  ✓ testOldFormatFileRejected"
 
 end TestSuite.TestFile

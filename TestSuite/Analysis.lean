@@ -76,7 +76,7 @@ def testNoDuplicateResults : IO Unit := do
         let rj := results[j]!
         if ri == rj then
           throw (IO.userError
-            s!"testNoDuplicateResults: duplicate [{ri.exercise}:{ri.lineInProof}] — `{ri.tactic}`")
+            s!"testNoDuplicateResults: duplicate [{ri.exercise}: step {ri.id.stepNumber}, tactic {ri.id.tacticIndexInStep}] — `{ri.tactic}`")
 
 /-- Verbose step filtering: `decide` is a shortcut at both the `show` (noop) and
     `norm_num` positions within each step body. The filter keeps only the first
@@ -401,6 +401,61 @@ def testNoInternalElaborationArtifactShortcuts : IO Unit := do
         (internal elaboration artifacts must not be probed), \
         got {results.size} at:{detail}")
 
+/-- Test #2: Non-Verbose proof produces no shortcut entries.
+    A plain Lean proof without Verbose step boundaries should not produce any
+    ProbeResult entries when probed. -/
+def testNonVerboseNoShortcuts : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/PlainProof.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.isEmpty do
+    let detail := results.foldl (fun s r => s ++ s!" {r.line}:{r.column} {r.exercise}") ""
+    throw (IO.userError
+      s!"testNonVerboseNoShortcuts: expected 0 shortcuts in non-Verbose proof, \
+        got {results.size} at:{detail}")
+
+/-- Test #3: Multiple exercises in one file — each gets its own stepNumber.
+    Both exercises should have stepNumber 1 (scoped per exercise, not per declaration). -/
+def testMultiExerciseInFile : IO Unit := do
+  let fixturePath : System.FilePath := "TestSuite/Fixtures/MultiExercise.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.size ≥ 1 do
+    throw (IO.userError
+      s!"testMultiExerciseInFile: expected ≥1 probe result, got {results.size}")
+  -- Verify each exercise gets its own stepNumber starting from 1
+  let exNames := results.map (·.exercise)
+  unless exNames.any (· == "first") do
+    throw (IO.userError
+      "testMultiExerciseInFile: expected exercise 'first' in results")
+  unless exNames.any (· == "second") do
+    throw (IO.userError
+      "testMultiExerciseInFile: expected exercise 'second' in results")
+  -- Both exercises should have stepNumber 1 (scoped per exercise)
+  let firstResults := results.filter (·.exercise == "first")
+  let secondResults := results.filter (·.exercise == "second")
+  for r in firstResults do
+    unless r.id.stepNumber == 1 do
+      throw (IO.userError
+        s!"testMultiExerciseInFile: 'first' stepNumber should be 1, got {r.id.stepNumber}")
+  for r in secondResults do
+    unless r.id.stepNumber == 1 do
+      throw (IO.userError
+        s!"testMultiExerciseInFile: 'second' stepNumber should be 1, got {r.id.stepNumber}")
+
+/-- Test #13: Mixed Verbose and non-Verbose proofs in same file.
+    Only the Verbose proof should produce shortcuts. -/
+def testMixedVerboseAndNonVerbose : IO Unit := do
+  let fixturePath : System.FilePath :=
+    "TestSuite/Fixtures/MixedVerbosePlain.lean"
+  let results ← analyzeFile fixturePath #["decide"]
+  unless results.size ≥ 1 do
+    throw (IO.userError
+      s!"testMixedVerboseAndNonVerbose: expected ≥1 shortcut from verboseEx, got {results.size}")
+  -- All results should be from 'verboseEx'
+  for r in results do
+    unless r.exercise == "verboseEx" do
+      throw (IO.userError
+        s!"testMixedVerboseAndNonVerbose: expected exercise 'verboseEx', got '{r.exercise}'")
+
 def runAll : IO Unit := do
   testDetectsDecideShortcut; IO.println "  ✓ testDetectsDecideShortcut"
   testNoTacticsNoResults;    IO.println "  ✓ testNoTacticsNoResults"
@@ -443,5 +498,11 @@ def runAll : IO Unit := do
                              IO.println "  ✓ testNoUnclassifiedTacticKinds"
   testNoInternalElaborationArtifactShortcuts;
                              IO.println "  ✓ testNoInternalElaborationArtifactShortcuts"
+  testNonVerboseNoShortcuts;
+                             IO.println "  ✓ testNonVerboseNoShortcuts"
+  testMultiExerciseInFile;
+                             IO.println "  ✓ testMultiExerciseInFile"
+  testMixedVerboseAndNonVerbose;
+                             IO.println "  ✓ testMixedVerboseAndNonVerbose"
 
 end TestSuite.Analysis

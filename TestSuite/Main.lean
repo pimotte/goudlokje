@@ -74,6 +74,12 @@ private def runTestInProcess (suite testName : String) : IO UInt32 := do
     TestSuite.Analysis.testNoInputAreasNoShortcuts; return 0
   | "Analysis", "testNoInternalElaborationArtifactShortcuts" =>
     TestSuite.Analysis.testNoInternalElaborationArtifactShortcuts; return 0
+  | "Analysis", "testNonVerboseNoShortcuts" =>
+    TestSuite.Analysis.testNonVerboseNoShortcuts; return 0
+  | "Analysis", "testMultiExerciseInFile" =>
+    TestSuite.Analysis.testMultiExerciseInFile; return 0
+  | "Analysis", "testMixedVerboseAndNonVerbose" =>
+    TestSuite.Analysis.testMixedVerboseAndNonVerbose; return 0
   | "Check", "testCheckNonZeroForUnexpectedShortcuts" =>
     TestSuite.Check.testCheckNonZeroForUnexpectedShortcuts; return 0
   | "Check", "testCheckZeroWithEmptyTactics" =>
@@ -164,6 +170,9 @@ private def analysisTests : Array IntTestSpec := #[
   { suite := "Analysis", name := "testInputAreaScoping" },
   { suite := "Analysis", name := "testNoInputAreasNoShortcuts" },
   { suite := "Analysis", name := "testNoInternalElaborationArtifactShortcuts" },
+  { suite := "Analysis", name := "testNonVerboseNoShortcuts" },
+  { suite := "Analysis", name := "testMultiExerciseInFile" },
+  { suite := "Analysis", name := "testMixedVerboseAndNonVerbose" },
 ]
 
 private def checkTests : Array IntTestSpec := #[
