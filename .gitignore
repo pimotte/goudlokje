@@ -1,1 +1,5 @@
 /.lake
+
+# End-to-end test work directory
+/test/e2e/work
+/test/.lake

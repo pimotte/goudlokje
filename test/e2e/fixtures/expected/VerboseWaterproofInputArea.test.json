@@ -1,0 +1,15 @@
+{
+  "exercises": {
+    "inside-area": {
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"omega"},
+        {"step":1,"tactic":"ring"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"}
+      ]
+    }
+  },
+  "testJsonVersion": 3
+}

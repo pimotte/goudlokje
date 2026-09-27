@@ -1,0 +1,32 @@
+{
+  "exercises": {
+    "example : (∀ n : ℕ, n + 0 = n) ∧ True": {
+      "lint": [
+        {"check":"typeAscription","step":2}
+      ],
+      "shortcuts": [
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"},
+        {"step":2,"tactic":"norm_num"},
+        {"step":2,"tactic":"omega"},
+        {"step":2,"tactic":"simp"},
+        {"step":2,"tactic":"tauto"},
+        {"step":4,"tactic":"tauto"}
+      ]
+    },
+    "example : True ∧ True": {
+      "lint": [
+        {"check":"typeAscription","step":2}
+      ],
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"},
+        {"step":3,"tactic":"tauto"}
+      ]
+    }
+  },
+  "testJsonVersion": 3
+}

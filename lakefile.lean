@@ -1,36 +1,24 @@
 import Lake
 open Lake DSL
 
+/-! Goudlokje depends only on Lean and, for its command-line interface, `Cli`. The tests, which need
+    Lean Verbose and the Waterproof genre, are a separate package in `test/`. -/
+
 package "goudlokje" where
   version := v!"0.1.0"
 
+@[default_target]
 lean_lib "Goudlokje" where
-  roots := #[`Goudlokje]
+  globs := #[.andSubmodules `Goudlokje]
 
 @[default_target]
 lean_exe "goudlokje" where
   root := `Main
-  moreLinkArgs := #["-rdynamic"]
-
-lean_lib "TestSuite" where
-  roots := #[`TestSuite]
-
--- FixtureDeps imports Verbose and Waterproof packages so their oleans are compiled.
--- This ensures `analyzeFile` can import them at runtime when processing fixture files.
-@[default_target]
-lean_lib "FixtureDeps" where
-  roots := #[`FixtureDeps]
-
-lean_exe "goudlokje_tests" where
-  root := `TestSuite.Main
-  moreLinkArgs := #["-rdynamic"]
-
-lean_exe "debug_analysis" where
-  root := `DebugAnalysis
-  moreLinkArgs := #["-rdynamic"]
 
 require "leanprover" / "lean4-cli" @ git "v4.31.0"
-require "waterproof-genre"
-      from git "https://github.com/impermeable/waterproof-genre" @ "feature/smaller-genre"
-require "verbose-lean4"
-      from git "https://github.com/PatrickMassot/verbose-lean4" @ "v4.31.0"
+
+/-- Runs the unit tests of the test package (`test/lakefile.lean`) with `lake test`. -/
+@[test_driver]
+script test (args) do
+  let child ← IO.Process.spawn { cmd := "lake", args := #["test", "--"] ++ args.toArray, cwd := "test" }
+  child.wait

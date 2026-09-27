@@ -1,8 +1,8 @@
-import Goudlokje.Config
-import Goudlokje.TestFile
-import Goudlokje.Discovery
-import Goudlokje.Analysis
-import Goudlokje.ProbeWorker
-import Goudlokje.Shortcuts
-import Goudlokje.Check
-import Goudlokje.Lint
+import Goudlokje.Linter
+import Goudlokje.Linter.Explain
+
+/-!
+# Goudlokje
+
+Import this module in worksheets to enable the Goudlokje linters; see the README.
+-/

@@ -1,0 +1,14 @@
+{
+  "exercises": {
+    "shortcut": {
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"}
+      ]
+    },
+    "true or false": {
+      "allowSorry": true
+    }
+  },
+  "testJsonVersion": 3
+}

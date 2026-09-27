@@ -1,0 +1,31 @@
+{
+  "exercises": {
+    "example : 1 + 1 = 2 ∧ 2 + 2 = 4": {
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"omega"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"},
+        {"step":2,"tactic":"decide"},
+        {"step":2,"tactic":"norm_num"},
+        {"step":2,"tactic":"omega"},
+        {"step":2,"tactic":"ring"},
+        {"step":2,"tactic":"simp"},
+        {"step":2,"tactic":"tauto"},
+        {"step":4,"tactic":"tauto"}
+      ]
+    },
+    "multi-decl test without step boundaries": {
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"omega"},
+        {"step":1,"tactic":"ring"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"}
+      ]
+    }
+  },
+  "testJsonVersion": 3
+}

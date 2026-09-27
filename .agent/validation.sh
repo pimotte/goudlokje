@@ -1,3 +1,5 @@
 #!/bin/sh
+set -e
 lake build
-lake exe goudlokje_tests
+lake test
+e2e/run.sh

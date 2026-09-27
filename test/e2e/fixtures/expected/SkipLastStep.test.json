@@ -1,0 +1,15 @@
+{
+  "exercises": {
+    "example : 1 + 1 = 2 ∧ 2 + 2 = 4": {
+      "shortcuts": [
+        {"step":1,"tactic":"decide"},
+        {"step":1,"tactic":"norm_num"},
+        {"step":1,"tactic":"omega"},
+        {"step":1,"tactic":"simp"},
+        {"step":1,"tactic":"tauto"},
+        {"step":3,"tactic":"tauto"}
+      ]
+    }
+  },
+  "testJsonVersion": 3
+}

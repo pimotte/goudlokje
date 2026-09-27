@@ -1,0 +1,11 @@
+{
+  "testJsonVersion": 3,
+  "exercises": {
+    "with expectations": {
+      "shortcuts": [
+        { "step": 1, "tactic": "decide" },
+        { "step": 7, "tactic": "decide" }
+      ]
+    }
+  }
+}

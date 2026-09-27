@@ -11,6 +11,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+      # Builds Goudlokje itself, which depends only on Lean and `Cli`.
       - uses: leanprover/lean-action@v1
         with:
-          test-entry: goudlokje_tests
+          test: false
+      # Builds the test package (`test/`), with the Mathlib cache, and runs `lake test` there.
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: test
+      - name: End-to-end tests
+        run: test/e2e/run.sh

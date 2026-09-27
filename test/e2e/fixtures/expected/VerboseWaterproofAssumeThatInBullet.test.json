@@ -1,0 +1,11 @@
+{
+  "exercises": {
+    "2.1.10": {
+      "shortcuts": [
+        {"step":1,"tactic":"tauto"},
+        {"step":3,"tactic":"tauto"}
+      ]
+    }
+  },
+  "testJsonVersion": 3
+}

@@ -1,0 +1,16 @@
+{
+  "testJsonVersion": 3,
+  "exercises": {
+    "documented raw tactic": {
+      "lint": [{ "check": "rawTactic", "step": 1 }]
+    },
+    "documented annotation": {
+      "lint": [
+        { "check": "typeAscription", "step": 1 },
+        { "check": "typeAscription", "step": 9 }
+      ]
+    },
+    "may contain sorry": { "allowSorry": true },
+    "stale allowance": { "allowSorry": true }
+  }
+}

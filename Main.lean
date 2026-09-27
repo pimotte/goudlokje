@@ -1,71 +1,40 @@
 import Cli
-import Goudlokje.Config
-import Goudlokje.Check
-import Goudlokje.ProbeWorker
-import Goudlokje.Update
+import Goudlokje.Cli.Commands
 
 open Cli
 
-private def loadConfig (debug : Bool) : IO Goudlokje.Config := do
-  let path : System.FilePath := ".goudlokje.json"
-  if ← path.pathExists then
-    if debug then
-      IO.println s!"[debug] Loading config from {path}"
-    Goudlokje.Config.load path
-  else
-    if debug then
-      IO.println s!"[debug] No config file found at {path}, using defaults (no tactics)"
-    return { tactics := #[] }
+private def paths (p : Parsed) : Array System.FilePath :=
+  let raw := p.variableArgsAs! String
+  if raw.isEmpty then #["."] else raw.map (⟨·⟩)
 
-private def runCheck (p : Parsed) : IO UInt32 := do
-  let verbose := p.hasFlag "verbose"
-  let debug   := p.hasFlag "debug" || verbose
-  let cfg ← loadConfig debug
-  let rawPaths := p.variableArgsAs! String
-  let paths : Array System.FilePath :=
-    if rawPaths.isEmpty then #[⟨"."⟩] else rawPaths.map (⟨·⟩)
-  let n ← Goudlokje.runCheck paths cfg debug verbose
-  return if n == 0 then 0 else 1
+private def runCheck (p : Parsed) : IO UInt32 :=
+  Goudlokje.Cli.check (paths p)
+
+private def runUpdate (p : Parsed) : IO UInt32 :=
+  Goudlokje.Cli.update (paths p) (all := p.hasFlag "all")
 
 private def checkCmd : Cmd := `[Cli|
   check VIA runCheck;
-  "Check Lean worksheets for unexpected shortcuts."
-
-  FLAGS:
-    debug;   "Print debug information during analysis (probe counts, result statistics)"
-    verbose; "Print all debug information plus detailed per-file probe hits"
+  "Build the worksheets and fail on findings their .test.json does not expect."
 
   ARGS:
-    ...files : String; "Lean files or directories to check (default: current directory)"
+    ...paths : String; "Worksheets or directories (default: the current directory)"
 ]
-
-private def runUpdate (p : Parsed) : IO UInt32 := do
-  let verbose   := p.hasFlag "verbose"
-  let debug     := p.hasFlag "debug" || verbose
-  let acceptAll := p.hasFlag "all"
-  let cfg ← loadConfig debug
-  let rawPaths := p.variableArgsAs! String
-  let paths : Array System.FilePath :=
-    if rawPaths.isEmpty then #[⟨"."⟩] else rawPaths.map (⟨·⟩)
-  Goudlokje.runUpdate paths cfg acceptAll debug verbose
-  return 0
 
 private def updateCmd : Cmd := `[Cli|
   update VIA runUpdate;
-  "Record expected shortcuts into per-file .test.json files."
+  "Record new findings as expected and remove stale expectations in .test.json files."
 
   FLAGS:
-    all;     "Accept all shortcuts without prompting"
-    debug;   "Print debug information during analysis (probe counts, result statistics)"
-    verbose; "Print all debug information plus detailed per-file probe hits"
+    all; "Make all changes without asking"
 
   ARGS:
-    ...files : String; "Lean files or directories to update (default: current directory)"
+    ...paths : String; "Worksheets or directories (default: the current directory)"
 ]
 
 private def goudlokjeCmd : Cmd := `[Cli|
   goudlokje NOOP;
-  "Worksheet shortcut checker for Lean 4 exercises."
+  "Checks Lean Verbose worksheets for shortcuts and style issues."
 
   SUBCOMMANDS:
     checkCmd;
@@ -73,10 +42,4 @@ private def goudlokjeCmd : Cmd := `[Cli|
 ]
 
 def main (args : List String) : IO UInt32 :=
-  match args with
-  | "__probe_file__" :: workerArgs =>
-    Goudlokje.runProbeWorkerCli workerArgs
-  | "__lint_file__" :: workerArgs =>
-    Goudlokje.runLintWorkerCli workerArgs
-  | _ =>
-    goudlokjeCmd.validate args
+  goudlokjeCmd.validate args

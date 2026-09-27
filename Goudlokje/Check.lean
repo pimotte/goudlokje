@@ -1,85 +1,68 @@
-import Goudlokje.Config
-import Goudlokje.Discovery
-import Goudlokje.Analysis
-import Goudlokje.ProbeWorker
-import Goudlokje.TestFile
-import Goudlokje.Shortcuts
-import Goudlokje.Lint
+import Lean.Data.Json
+import Goudlokje.Options
+
+/-!
+# Checks
+
+The checks Goudlokje performs on every exercise, and their properties.
+-/
 
 namespace Goudlokje
 
-private structure WorksheetCheckSummary where
-  probeResultCount : Nat
-  probeAttempts    : Nat
-  shortcuts        : Array ShortcutResult
-  stale            : Array StaleEntry
-  unexpectedCount  : Nat
-  lintResult       : LintClassificationResult
+open Lean
 
-private def checkWorksheet
-    (ws : WorksheetEntry) (cfg : Config)
-    (debugMode : Bool) (verbose : Bool) : IO WorksheetCheckSummary := do
-  let analyzed ← analyzeFileIsolated ws.sourcePath cfg.tactics debugMode verbose
-  let found := analyzed.results
-  let testPath := ws.testPath.getD (ws.sourcePath.withExtension "test.json")
-  let tf := TestFile.load testPath
-  let cr := classify found (← tf)
-  let unexpectedCount := cr.shortcuts.foldl (fun acc shortcut =>
-    match shortcut with
-    | .unexpected _ => acc + 1
-    | .expected _ => acc) 0
-  -- Run lint checks in an isolated subprocess to avoid accumulating memory.
-  let lintFound ← lintFileIsolated ws.sourcePath
-  let lintCr := classifyLint lintFound (← tf)
-  return {
-    probeResultCount := found.size
-    probeAttempts := analyzed.probeAttempts
-    shortcuts := cr.shortcuts
-    stale := cr.stale
-    unexpectedCount := unexpectedCount
-    lintResult := lintCr
-  }
+/-- A check performed on every exercise. -/
+inductive Check where
+  /-- A probe tactic closes a goal before the end of the proof (see `Checks.Shortcut`). -/
+  | shortcut
+  /-- A raw Lean tactic in a Verbose proof (B1). -/
+  | rawTactic
+  /-- A type annotation in a proof step (B2). -/
+  | typeAscription
+  /-- A `sorry` in a proof (B3). -/
+  | sorry
+  deriving Repr, BEq, Hashable, Inhabited
 
-/-- Run check mode: analyse worksheets and report any unexpected shortcuts or lint violations.
-    Returns the number of unexpected shortcuts + undocumented B3 lint errors (non-zero → CI failure).
-    When `debug` is true, prints analysis statistics per file.
-    When `verbose` is true, implies `debug` and additionally lists all discovered
-    worksheets upfront and logs every individual probe hit per file. -/
-def runCheck
-    (paths : Array System.FilePath) (cfg : Config)
-    (debug : Bool := false) (verbose : Bool := false) : IO Nat := do
-  let worksheets ← discoverWorksheets paths
-  let debugMode := debug || verbose
-  if verbose then
-    IO.println s!"Discovered {worksheets.size} worksheet(s):"
-    for ws in worksheets do
-      IO.println s!"  {ws.sourcePath}"
-  if debugMode then
-    IO.println s!"Probing with {cfg.tactics.size} tactic(s): {", ".intercalate cfg.tactics.toList}"
-  let mut unexpectedCount := 0
-  for ws in worksheets do
-    IO.println s!"Checking {ws.sourcePath}..."
-    let summary ← checkWorksheet ws cfg debugMode verbose
-    if debugMode then
-      IO.println s!"  Found {summary.probeResultCount} probe result(s), {summary.shortcuts.size} shortcut(s), {summary.stale.size} stale entry/entries"
-      if summary.probeAttempts == 0 && !cfg.tactics.isEmpty then
-        IO.println s!"  Warning: no tactic positions found in {ws.sourcePath} — verify all imports are available (run via `lake exe goudlokje`)"
-    for r in summary.shortcuts do
-      printShortcutResult r
-    for s in summary.stale do
-      printStaleEntry s
-    -- Report lint results.
-    for v in summary.lintResult.violations do
-      printLintViolationResult v
-    for s in summary.lintResult.stale do
-      printStaleLintEntry s
-    unexpectedCount := unexpectedCount + summary.unexpectedCount
-    -- Count B1 and B3 lint violations as build failures.
-    -- B1 always fails the build (cannot be suppressed); B3 (sorry) is always an error.
-    unexpectedCount := unexpectedCount + summary.lintResult.violations.foldl (fun acc v =>
-      match v with
-      | .unexpected r => if r.check == "B1" || r.check == "B3" then acc + 1 else acc
-      | .expected _ => acc) 0
-  return unexpectedCount
+namespace Check
+
+/-- All checks, in the order they run. -/
+def all : Array Check := #[.shortcut, .rawTactic, .typeAscription, .sorry]
+
+/-- The name of the check, as used in `.test.json` and the results file. -/
+def name : Check → String
+  | .shortcut => "shortcut"
+  | .rawTactic => "rawTactic"
+  | .typeAscription => "typeAscription"
+  | .sorry => "sorry"
+
+/-- The check called `name`, if any. -/
+def ofName? (name : String) : Option Check :=
+  all.find? (·.name == name)
+
+/-- The option that enables the check. -/
+def linterOption : Check → Lean.Option Bool
+  | .shortcut => linter.goudlokje.shortcut
+  | .rawTactic => linter.goudlokje.rawTactic
+  | .typeAscription => linter.goudlokje.typeAscription
+  | .sorry => linter.goudlokje.sorry
+
+/-- The severity of an issue that `.test.json` does not expect. -/
+def severity : Check → MessageSeverity
+  | .typeAscription => .warning
+  | _ => .error
+
+/-- Whether issues can be recorded as expected in `.test.json`. -/
+def suppressible : Check → Bool
+  | .rawTactic => false
+  | _ => true
+
+instance : ToJson Check := ⟨(toJson ·.name)⟩
+
+instance : FromJson Check where
+  fromJson? json := do
+    let name ← json.getStr?
+    (ofName? name).elim (throw s!"unknown check `{name}`") pure
+
+end Check
 
 end Goudlokje

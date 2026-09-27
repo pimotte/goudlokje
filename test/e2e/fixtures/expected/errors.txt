@@ -1,0 +1,32 @@
+LintB1Verbose.lean:26:2: raw Lean tactic `norm_num` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+LintB1Verbose.lean:28:2: raw Lean tactic `norm_num` at step 4 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+LintB1Verbose.lean:33:2: raw Lean tactic `rfl` at step 2 of exercise "example : ∃ k : ℕ, 4 = 2 * k"; use a Lean Verbose tactic instead
+LintB1VerboseCheck.lean:25:2: raw Lean tactic `exact` at step 2 of exercise "example : 1 = 1 ∧ 2 = 2"; use a Lean Verbose tactic instead
+LintB1VerboseCheck.lean:27:2: raw Lean tactic `exact` at step 4 of exercise "example : 1 = 1 ∧ 2 = 2"; use a Lean Verbose tactic instead
+LintB2.lean:24:2: raw Lean tactic `ring` at step 3 of exercise "example : (∀ n : ℕ, n + 0 = n) ∧ True"; use a Lean Verbose tactic instead
+LintB2.lean:26:2: raw Lean tactic `trivial` at step 5 of exercise "example : (∀ n : ℕ, n + 0 = n) ∧ True"; use a Lean Verbose tactic instead
+LintB2.lean:31:2: raw Lean tactic `exact` at step 2 of exercise "example : True ∧ True"; use a Lean Verbose tactic instead
+LintB2.lean:33:2: raw Lean tactic `trivial` at step 4 of exercise "example : True ∧ True"; use a Lean Verbose tactic instead
+LintB2FalsePositive.lean:25:2: raw Lean tactic `ring` at step 2 of exercise "example : ∀ n : ℕ, n + 0 = n"; use a Lean Verbose tactic instead
+LintB2FalsePositive.lean:30:2: raw Lean tactic `rfl` at step 2 of exercise "example : ∃ k : ℕ, 4 = 2 * k"; use a Lean Verbose tactic instead
+LintB2FalsePositive.lean:35:2: raw Lean tactic `norm_num` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+LintB2FalsePositive.lean:37:2: raw Lean tactic `norm_num` at step 4 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+SkipLastStep.lean:26:2: raw Lean tactic `norm_num` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+SkipLastStep.lean:28:2: raw Lean tactic `norm_num` at step 4 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+Verbose.lean:23:2: raw Lean tactic `norm_num` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+Verbose.lean:25:2: raw Lean tactic `norm_num` at step 4 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+Verbose.lean:31:2: raw Lean tactic `rfl` at step 2 of exercise "example : ∃ k : ℕ, 4 = 2 * k"; use a Lean Verbose tactic instead
+VerboseExercise.lean:30:2: raw Lean tactic `show` at step 1 of exercise "test exercise without step boundaries"; use a Lean Verbose tactic instead
+VerboseExercise.lean:31:2: raw Lean tactic `norm_num` at step 2 of exercise "test exercise without step boundaries"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:25:2: raw Lean tactic `show` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:26:2: raw Lean tactic `norm_num` at step 3 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:28:2: raw Lean tactic `show` at step 5 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:29:2: raw Lean tactic `norm_num` at step 6 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:37:2: raw Lean tactic `show` at step 1 of exercise "multi-decl test without step boundaries"; use a Lean Verbose tactic instead
+VerboseMultiDecl.lean:38:2: raw Lean tactic `norm_num` at step 2 of exercise "multi-decl test without step boundaries"; use a Lean Verbose tactic instead
+VerboseMultiStep.lean:28:2: raw Lean tactic `show` at step 2 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiStep.lean:29:2: raw Lean tactic `norm_num` at step 3 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiStep.lean:31:2: raw Lean tactic `show` at step 5 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseMultiStep.lean:32:2: raw Lean tactic `norm_num` at step 6 of exercise "example : 1 + 1 = 2 ∧ 2 + 2 = 4"; use a Lean Verbose tactic instead
+VerboseWaterproofInputArea.lean:29:2: raw Lean tactic `show` at step 1 of exercise "inside-area"; use a Lean Verbose tactic instead
+VerboseWaterproofInputArea.lean:30:2: raw Lean tactic `norm_num` at step 2 of exercise "inside-area"; use a Lean Verbose tactic instead
